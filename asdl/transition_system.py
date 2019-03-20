@@ -26,6 +26,12 @@ class GenTokenAction(Action):
     def __init__(self, token):
         self.token = token
 
+    def __hash__(self):
+        return hash('GenTokenAction' + str(self.token))
+
+    def __eq__(self, other):
+        return isinstance(other, GenTokenAction) and (str(self.token) == str(other.token))
+
     def is_stop_signal(self):
         return self.token == '</primitive>'
 
@@ -34,7 +40,13 @@ class GenTokenAction(Action):
 
 
 class ReduceAction(Action):
-   def __repr__(self):
+    def __hash__(self):
+        return hash('ReduceAction')
+
+    def __eq__(self, other):
+        return isinstance(other, ReduceAction)
+
+    def __repr__(self):
        return 'Reduce'
 
 
