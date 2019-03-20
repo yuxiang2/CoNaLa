@@ -20,11 +20,13 @@ class Encoder(nn.Module):
 		return hidden_h, hidden_c
 		
 class Decoder(nn.Module): 
-	def __init__(self, word_size, sos, eos):
+	def __init__(self, code_size):
 		super(Decoder, self).__init__()
+		
 		embed_size = 16
-		self.word_size = word_size
-		self.emb = nn.Embedding(word_size, embed_size)
+		code_size = code_size + 1 # add one for padding
+		self.code_size = code_size
+		self.emb = nn.Embedding(code_size, embed_size)
 		hidden_size = 256
 		self.cell1 = nn.LSTMCell(embed_size, hidden_size)
 		self.cell2 = nn.LSTMCell(hidden_size, hidden_size)
@@ -32,20 +34,15 @@ class Decoder(nn.Module):
 		self.linear = nn.Sequential(
 			nn.Linear(hidden_size, hidden_size),
 			nn.ReLU(),
-			nn.Linear(hidden_size, word_size)
+			nn.Linear(hidden_size, code_size)
 		)
-		
-		## store start of sent and eos symbols for padding
-		## and generation
-		self.sos = sos 
-		self.eos = eos
 		
 	## pad code within a batch to the same length so 
 	## that we can do batch rnn
 	def pad_code(self, codes):
 		N = len(codes)
 		maxlen = 0
-		eos = self.eos
+		eos = self.code_size - 1
 		for code in codes:
 			maxlen = max(maxlen, len(code))
 		padded_codes = torch.LongTensor(N, maxlen)
@@ -65,7 +62,7 @@ class Decoder(nn.Module):
 		hidden3 = hidden 
 		
 		## scores is for storing logits
-		scores = torch.DoubleTensor(len(x), leng, self.word_size)
+		scores = torch.DoubleTensor(len(x), leng, self.code_size)
 		
 		## for each time step
 		for t in range(leng):
@@ -85,10 +82,10 @@ class Decoder(nn.Module):
 		return scores.view(len(x)*leng, -1), padded_x.view(-1)
 		
 class Model(nn.Module):
-	def __init__(self, word_size, code_size, sos, eos, lr=1e-3, best_acc=0.0):
+	def __init__(self, word_size, code_size, lr=1e-3, best_acc=0.0):
 		super(Model, self).__init__()
 		self.encoder = Encoder(word_size)
-		self.decoder = Decoder(code_size, sos, eos)
+		self.decoder = Decoder(code_size)
 		self.loss = nn.CrossEntropyLoss()
 		self.opt = torch.optim.Adam(self.parameters(), lr=lr)
 		self.best_acc = best_acc
@@ -136,21 +133,4 @@ class Model(nn.Module):
 				loss = 0
 				acc = 0
 				
-		# dev
-		acc = 0
-		for i,(x,y) in enumerate(dev_loader):
-			self.encoder.eval()
-			self.decoder.eval()
-			correct_i = self.forward(x,y,train=False)
-			acc += acc_i
-			
-		acc /= i
-		print('dev_acc = {}'.format(acc))
-		if acc > self.best_acc:
-			torch.save(self.state_dict(), 'CoNaLa_Basic.t7')
-			self.best_acc = acc
-		
-		print('---------------------------------------------')
-		
-		
-		
+	
