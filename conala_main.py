@@ -11,8 +11,9 @@ import argparse
 import dataset.bleu_score as bleu_score
 from dataset.util import tokenize_for_bleu_eval
 
-# TODO: modify this to fit our purpose
 # Main function for CodaLab evaluation purposes
+# It basically just read in prediction and ground truth and calculate the BLEU score.
+# TODO: modify this to fit our purpose
 def main():
 
     p = argparse.ArgumentParser(description="Evaluator for CoNaLa",

@@ -6,14 +6,13 @@ import numpy as np
 from common.registerable import Registrable
 
 # CoNaLa
-from common.registerable import Registrable
-from .evaluator import Evaluator
-from .dataset import Dataset
-from .util import decanonicalize_code, tokenize_for_bleu_eval
 from .bleu_score import compute_bleu
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from .dataset import Dataset
+from .evaluator import Evaluator
+from .util import decanonicalize_code, tokenize_for_bleu_eval
 import ast
 import astor
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 
 
@@ -84,7 +83,6 @@ class CachedExactMatchEvaluator(Evaluator):
 
         return dict(accuracy=np.average(acc_array),
                     oracle_array=np.average(oracle_array))
-
 
 
 
