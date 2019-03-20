@@ -1,8 +1,8 @@
 import astor
 
 from common.registerable import Registrable
-from datasets.utils import ExampleProcessor
-from datasets.conala.dataset import canonicalize_intent, tokenize_intent, asdl_ast_to_python_ast, decanonicalize_code
+from .utils import ExampleProcessor
+from .dataset import canonicalize_intent, tokenize_intent, asdl_ast_to_python_ast, decanonicalize_code
 
 
 @Registrable.register('conala_example_processor')

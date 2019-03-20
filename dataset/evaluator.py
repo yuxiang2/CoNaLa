@@ -6,11 +6,10 @@ import numpy as np
 from common.registerable import Registrable
 
 # CoNaLa
-from components.evaluator import Evaluator
 from common.registerable import Registrable
-from components.dataset import Dataset
-from .util import decanonicalize_code
-from .conala_eval import tokenize_for_bleu_eval
+from .evaluator import Evaluator
+from .dataset import Dataset
+from .util import decanonicalize_code, tokenize_for_bleu_eval
 from .bleu_score import compute_bleu
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 import ast

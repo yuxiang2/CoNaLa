@@ -8,8 +8,10 @@ import token
 import tokenize
 import argparse
 
-import datasets.conala.bleu_score as bleu_score
+import dataset.bleu_score as bleu_score
+from dataset.util import tokenize_for_bleu_eval
 
+# TODO: modify this to fit our purpose
 # Main function for CodaLab evaluation purposes
 def main():
 
@@ -87,20 +89,6 @@ def parse_file_json(f):
         result.append(toks)
     return result
 
-""" The tokenizer that we use for code submissions, from Wang Ling et al., Latent Predictor Networks for Code Generation (2016)
-    @param code: string containing a code snippet
-    @return: list of code tokens
-"""
-def tokenize_for_bleu_eval(code):
-    code = re.sub(r'([^A-Za-z0-9_])', r' \1 ', code)
-    code = re.sub(r'([a-z])([A-Z])', r'\1 \2', code)
-    code = re.sub(r'\s+', ' ', code)
-    code = code.replace('"', '`')
-    code = code.replace('\'', '`')
-    tokens = [t for t in code.split(' ') if t]
-
-    return tokens
-
 """ This runs the built-in Python tokenizer. Note that it only works on correctly parseable Python programs.
     @param string: string containing a Python tokenizable code snippet
     @return: list of code tokens
@@ -120,7 +108,6 @@ def tokenize_code(string, concat_symbol=None):
                                 conala_annotations.v1.0.zip/examples.annotated.test.json
     @return: list of references ready for BLEU scoring
 """
-# 
 def get_reference_list(reference_file_name):
     f_reference = open(reference_file_name)
     a = parse_file_json(f_reference)
