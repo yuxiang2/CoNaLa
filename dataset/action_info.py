@@ -12,13 +12,16 @@ class ActionInfo(object):
         self.action = action
         self.frontier_prod = None
         self.frontier_field = None
+        self.idx = None
 
         # for GenToken actions only
         self.copy_from_src = False
         self.src_token_position = -1
+        self.token = None
 
     def __repr__(self, verbose=False):
-        repr_str = '%s (t=%d, p_t=%d, frontier_field=%s)' % (repr(self.action),
+        repr_str = '%s (idx=%d, t=%d, p_t=%d, frontier_field=%s)' % (repr(self.action),
+                                                         self.idx,
                                                          self.t,
                                                          self.parent_t,
                                                          self.frontier_field.__repr__(True) if self.frontier_field else 'None')
@@ -39,7 +42,7 @@ class ActionInfo(object):
         return repr_str
 
 
-def get_action_infos(src_query, tgt_actions, force_copy=False):
+def get_action_infos(src_query, tgt_actions, action2num, token2num, force_copy=False):
     action_infos = []
     hyp = Hypothesis()
     for t, action in enumerate(tgt_actions):
@@ -55,8 +58,17 @@ def get_action_infos(src_query, tgt_actions, force_copy=False):
                 tok_src_idx = src_query.index(str(action.token))
                 action_info.copy_from_src = True
                 action_info.src_token_position = tok_src_idx
+                action_info.idx = action2num[GenTokenAction('copy')]
             except ValueError:
                 if force_copy: raise ValueError('cannot copy primitive token %s from source' % action.token)
+                action_info.idx = action2num[GenTokenAction('token')]
+                if action.token in token2num:
+                    action_info.token = token2num[action.token]
+                else:
+                    action_info.token = token2num['<UNK>']
+
+        else:
+            action_info.idx = action2num[action]
 
         hyp.apply_action(action)
         action_infos.append(action_info)
