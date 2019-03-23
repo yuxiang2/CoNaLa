@@ -1,9 +1,9 @@
 # coding=utf-8
-import os
-import math
 from collections import OrderedDict
-import numpy as np
+import math
+import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils as U
@@ -14,10 +14,9 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from asdl.hypothesis import Hypothesis, GenTokenAction
 from asdl.transition_system import ApplyRuleAction, ReduceAction, Action
 from common.registerable import Registrable
-from dataset.decode_hypothesis import DecodeHypothesis
-from dataset.action_info import ActionInfo
-from dataset.dataset import Batch
 from common.utils import update_args, init_arg_parser
+from dataset.action_info import ActionInfo
+from dataset.decode_hypothesis import DecodeHypothesis
 from model import nn_utils
 from model.attention_util import AttentionUtil
 from model.nn_utils import LabelSmoothing
@@ -29,6 +28,7 @@ class Encoder(nn.Module):
 		super(Encoder, self).__init__()
 		self.emb = nn.Embedding(word_size, embed_size)
 		self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
+        nn.init.xavier_normal(self.emb.weight.data)
 		
 	def forward(self, x):
 		embed = [self.emb(datapoint.long()) for datapoint in x]
@@ -37,85 +37,165 @@ class Encoder(nn.Module):
 		hidden_h, hidden_c = hidden 
 		hidden_h = hidden_h[-1] + hidden_h[-2]
 		hidden_c = hidden_c[-1] + hidden_c[-2]
-		return outputs, hidden_h, hidden_c
+		return outputs, (hidden_h, hidden_c)
 		
 class Decoder(nn.Module): 
-	def __init__(self, action_embed_size, code_size, hidden_size):
+	def __init__(self, action_embed_size, embed_size, hidden_size, code_size, token_size):
 		super(Decoder, self).__init__()
 		
+        self.action_embed_size = action_embed_size
+        self.embed_size = embed_size
 		self.code_size = code_size + 1 # add one for padding
-		self.emb = nn.Embedding(code_size, action_embed_size)
-		self.cell1 = nn.LSTMCell(embed_size, hidden_size)
-		self.cell2 = nn.LSTMCell(hidden_size, hidden_size)
-		self.cell3 = nn.LSTMCell(hidden_size, hidden_size)
+        self.hidden_size = hidden_size
+        self.token_size = token_size
+
+		self.emb = nn.Embedding(self.code_size, self.action_embed_size)
+		self.cell1 = nn.LSTMCell(self.embed_size, self.hidden_size)
+		self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
+		self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
 		self.linear = nn.Sequential(
-			nn.Linear(hidden_size, hidden_size),
+			nn.Linear(self.hidden_size, self.hidden_size),
 			nn.ReLU(),
-			nn.Linear(hidden_size, code_size)
+			nn.Linear(self.hidden_size, self.code_size)
 		)
+        self.linear_token = nn.Sequential(
+            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.ReLU(),
+            nn.Linear(self.hidden_size, self.token_size),
+        )
+
+        for layer in linear.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_normal(layer.weight)
+        for layer in linear_token.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_normal(layer.weight)
+        nn.init.xavier_normal(self.emb.weight.data)
 		
 	## pad code within a batch to the same length so 
 	## that we can do batch rnn
-	def pad_code(self, codes):
+	def process_code(self, codes):
 		N = len(codes)
 		maxlen = 0
 		eos = self.code_size - 1
 		for code in codes:
 			maxlen = max(maxlen, len(code))
+
 		padded_codes = torch.LongTensor(N, maxlen)
 		for i, code in enumerate(codes):
 			padded_codes[i, :len(code)] = code
 			padded_codes[i, len(code):] = eos
 		return padded_codes
 			
-	def forward(self, x, hidden):
-		padded_x = self.pad_code(x)
-		leng = len(padded_x[0])
+    def decode_step(self, embed_t, hiddens, sentence_encoding):
+        assert len(hiddens == 3)
+        att_t = None  # TODO: calculate attention using sentence_encoding
+        h_t0, cell_t0 = self.cell1(embed_t, hiddens[0])
+        h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
+        h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
+        return (h_t2, cell_t2), att_t
+
+	def decode(self, x, encoder_hidden, sentence_encoding):
+		padded_x = self.process_code(x)
+		length = len(padded_x[0])
 		embed = self.emb(padded_x)
 		
 		## initialize hidden states
-		hidden1 = hidden 
-		hidden2 = hidden 
-		hidden3 = hidden 
+		hidden1, hidden2, hidden3 = encoder_hidden, encoder_hidden, encoder_hidden
 		
 		## scores is for storing logits
-		scores = torch.DoubleTensor(len(x), leng, self.code_size)
+		scores = torch.DoubleTensor(len(x), length, self.code_size)
 		
 		## for each time step
-		for t in range(leng):
-			embed_t = embed[:,t,:]
-			hidden1 = self.cell1(embed_t, hidden1)
-			hidden2 = self.cell2(hidden1[0], hidden2)
-			hidden3 = self.cell3(hidden2[0], hidden3)
-			
-			## do linear inside for loop is inefficient, 
-			## but it allows teacher forcing
-			score = self.linear(hidden3[0])
-			scores[:,t,:] = score
+		for t in range(length):
+			embed_t = embed[:, t, :]
+            h_t, _, _ = decode_step(embed_t, [hidden1, hidden2, hidden3], sentence_encoding)
+
+            ## do linear inside for loop is inefficient, but it allows teacher forcing
+			scores[:, t, :] = self.linear(h_t)
 			
 		## padded eos symbols are not removed, thus
 		## calculated accuracy can be too high
-			
-		return scores.view(len(x)*leng, -1), padded_x.view(-1)
+		return scores.view(len(x) * length, -1), padded_x.view(-1)
+
+
+        #############################
+        batch_size = len(batch)
+        args = self.args
+        h_tm1 = dec_init_vec
+
+        # (batch_size, query_len, hidden_size)
+        src_encodings_att_linear = self.att_src_linear(src_encodings)
+
+        zero_action_embed = Variable(self.new_tensor(args.action_embed_size).zero_())
+
+        att_vecs = []
+        for t in range(batch.max_action_num):
+            # the input to the decoder LSTM is a concatenation of multiple signals
+            # [
+            #   embedding of previous action -> `a_tm1_embed`,
+            #   previous attentional vector -> `att_tm1`,
+            # ]
+
+            if t == 0:
+                x = Variable(self.new_tensor(batch_size, self.decoder_lstm.input_size).zero_(), requires_grad=False)
+            else:
+                a_tm1_embeds = []
+                for example in batch.examples:
+                    # action t - 1
+                    if t < len(example.tgt_actions):
+                        a_tm1 = example.tgt_actions[t - 1]
+                        if isinstance(a_tm1.action, ApplyRuleAction):
+                            a_tm1_embed = self.production_embed.weight[self.grammar.prod2id[a_tm1.action.production]]
+                        elif isinstance(a_tm1.action, ReduceAction):
+                            a_tm1_embed = self.production_embed.weight[len(self.grammar)]
+                        else:
+                            a_tm1_embed = self.primitive_embed.weight[self.vocab.primitive[a_tm1.action.token]]
+                    else:
+                        a_tm1_embed = zero_action_embed
+                    a_tm1_embeds.append(a_tm1_embed)
+                a_tm1_embeds = torch.stack(a_tm1_embeds)
+
+                inputs = [a_tm1_embeds]
+                x = torch.cat(inputs, dim=-1)
+
+            (h_t, cell_t), att_t = self.step(x, h_tm1, src_encodings,
+                                             src_encodings_att_linear,
+                                             src_token_mask=batch.src_token_mask,
+                                             return_att_weight=False)
+
+            att_vecs.append(att_t)
+
+            h_tm1 = (h_t, cell_t)
+            att_tm1 = att_t
+
+        att_vecs = torch.stack(att_vecs, dim=0)
+        return att_vecs
 		
 class Model(nn.Module):
-	def __init__(self, code_size, hyperParams, word_size, best_acc=0.0, encoder_lstm_layers=3):
+	def __init__(self, code_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
 		super(Model, self).__init__()
-		self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size)
-		self.decoder = Decoder(hyperParams.action_embed_size, code_size, hyperParams.hidden_size)
+        self.hyperParams = hyperParams
+		self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
+		self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
+                               hyperParams.hidden_size, 
+                               code_size, token_size)
 		self.loss = nn.CrossEntropyLoss()
 		self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
 		self.best_acc = best_acc
+
+    def score(self, batch_intent, batch_target):
+        sentence_encoding, hidden = self.encoder(intent)
+        scores, labels = self.decoder(code, hidden, sentence_encoding)
 		
 	def forward(self, intent, code, train=True):
-			
 		hidden = self.encoder(intent)
-		scores,labels = self.decoder(code, hidden)
+		scores, labels = self.decoder(code, hidden)
 		
 		# get statistics
 		_, predicted = torch.max(scores, 1)
 		num_correct = (predicted == labels).sum().item()
-		acc = float(num_correct)/len(predicted)
+		acc = float(num_correct) / len(predicted)
 		
 		if train:
 			# gradient descent
@@ -127,29 +207,31 @@ class Model(nn.Module):
 			self.opt.step()
 			
 			return loss.item(), acc
-			
 		else:
 			return acc
 		
-	def epoch(self, train_loader, dev_loader, show_interval=15):
-		
-		# train
-		loss = 0
-		acc = 0
-		for i,(x,y) in enumerate(train_loader):
-			self.encoder.train()
-			self.decoder.train()
-			loss_i,acc_i = self.forward(x,y,train=True)
-			loss += loss_i 
-			acc += acc_i
-			
-			if (i+1) % show_interval == 0:
-				loss /= show_interval
-				acc /= show_interval
-				print('train_loss = {}, train_acc = {}'.format(loss, acc))
-				loss = 0
-				acc = 0
-		
+    def save(self, path):
+        dir_name = os.path.dirname(path)
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+
+        params = {
+            'state_dict': self.state_dict()
+        }
+        torch.save(self.params, path)
+
+    @classmethod
+    def load(cls, code_size, hyperParams, token_size, word_size, encoder_lstm_layers=3):
+        params = torch.load(hyperParams.load_model, map_location=lambda storage, loc: storage)
+        saved_state = params['state_dict']
+
+        parser = cls(code_size, hyperParams, token_size, word_size, encoder_lstm_layers=encoder_lstm_layers)
+        parser.load_state_dict(saved_state)
+
+        if hyperParams.cuda: 
+            parser = parser.cuda()
+        parser.eval()
+        return parser
 
 
 
@@ -333,12 +415,7 @@ class Parser(nn.Module):
 
         # query vectors are sufficient statistics used to compute action probabilities
         # query_vectors: (tgt_action_len, batch_size, hidden_size)
-
-        # if use supervised attention
-        if self.args.sup_attention:
-            query_vectors, att_prob = self.decode(batch, src_encodings, dec_init_vec)
-        else:
-            query_vectors = self.decode(batch, src_encodings, dec_init_vec)
+        query_vectors = self.decode(batch, src_encodings, dec_init_vec)
 
         # ApplyRule (i.e., ApplyConstructor) action probabilities
         # (tgt_action_len, batch_size, grammar_size)
@@ -402,15 +479,13 @@ class Parser(nn.Module):
 
             # avoid nan in log
             action_prob.data.masked_fill_(action_mask_pad.data, 1.e-7)
-
             action_prob = action_prob.log() * action_mask
 
         scores = torch.sum(action_prob, dim=0)
 
         returns = [scores]
-        if self.args.sup_attention:
-            returns.append(att_prob)
-        if return_encode_state: returns.append(last_state)
+        if return_encode_state: 
+            returns.append(last_state)
 
         return returns
 
@@ -461,13 +536,7 @@ class Parser(nn.Module):
 
         batch_size = len(batch)
         args = self.args
-
-        if args.lstm == 'parent_feed':
-            h_tm1 = dec_init_vec[0], dec_init_vec[1], \
-                    Variable(self.new_tensor(batch_size, args.hidden_size).zero_()), \
-                    Variable(self.new_tensor(batch_size, args.hidden_size).zero_())
-        else:
-            h_tm1 = dec_init_vec
+        h_tm1 = dec_init_vec
 
         # (batch_size, query_len, hidden_size)
         src_encodings_att_linear = self.att_src_linear(src_encodings)
@@ -557,18 +626,6 @@ class Parser(nn.Module):
                                                          src_token_mask=batch.src_token_mask,
                                                          return_att_weight=True)
 
-            # if use supervised attention
-            if args.sup_attention:
-                for e_id, example in enumerate(batch.examples):
-                    if t < len(example.tgt_actions):
-                        action_t = example.tgt_actions[t].action
-                        cand_src_tokens = AttentionUtil.get_candidate_tokens_to_attend(example.src_sent, action_t)
-                        if cand_src_tokens:
-                            att_prob = [att_weight[e_id, token_id] for token_id in cand_src_tokens]
-                            if len(att_prob) > 1: att_prob = torch.cat(att_prob).sum()
-                            else: att_prob = att_prob[0]
-                            att_probs.append(att_prob)
-
             history_states.append((h_t, cell_t))
             att_vecs.append(att_t)
             att_weights.append(att_weight)
@@ -577,9 +634,7 @@ class Parser(nn.Module):
             att_tm1 = att_t
 
         att_vecs = torch.stack(att_vecs, dim=0)
-        if args.sup_attention:
-            return att_vecs, att_probs
-        else: return att_vecs
+        return att_vecs
 
     def parse(self, src_sent, context=None, beam_size=5, debug=False):
         """Perform beam search to infer the target AST given a source utterance
@@ -721,9 +776,6 @@ class Parser(nn.Module):
 
                 # Variable(batch_size, primitive_vocab_size)
                 primitive_prob = primitive_predictor_prob[:, 0].unsqueeze(1) * gen_from_vocab_prob
-
-                # if src_unk_pos_list:
-                #     primitive_prob[:, primitive_vocab.unk_id] = 1.e-10
 
             gentoken_prev_hyp_ids = []
             gentoken_new_hyp_unks = []

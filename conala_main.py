@@ -71,7 +71,7 @@ hyperParamMap = {
     'no_parent_production_embed': False,    # Do not use embedding of parent ASDL production to update decoder LSTM state
     'no_parent_field_embed': False,         # Do not use embedding of parent field to update decoder LSTM state
     'no_parent_field_type_embed': False,    # Do not use embedding of the ASDL type of parent field to update decoder LSTM state
-    'no_parent_state': False,               # Do not use the parent hidden state to update decoder LSTM state
+    'no_parent_state': True,                # Do not use the parent hidden state to update decoder LSTM state
     'no_input_feed': False,                 # Do not use input feeding in decoder LSTM
     'no_copy': False,                       # Do not use copy mechanism
 
@@ -117,6 +117,41 @@ hyperParamMap = {
 
 HyperParams = namedtuple('HyperParams', list(hyperParamMap.keys()), verbose=True)
 hyperParams = HyperParams(**hyperParamMap)
+
+
+def train(model, train_loader, dev_loader, params):
+    optimizer_cls = eval('torch.optim.%s' % params.optimizer)  # FIXME: this is evil!
+    optimizer = optimizer_cls(model.parameters(), lr=args.lr)
+
+    print('use glorot initialization', file=sys.stderr)
+    nn_utils.glorot_init(model.parameters())
+
+    self.model.train()
+    if params.cuda: 
+        model.cuda()
+
+    epoch = train_iter = 0
+    report_loss = report_examples = 0.
+    history_dev_scores = []
+    num_trial = patience = 0
+    while True:
+        epoch += 1
+        epoch_begin = time.time()
+
+        loss = 0
+        acc = 0
+        for i,(x,y) in enumerate(train_loader):
+            loss_i,acc_i = self.forward(x,y,train=True)
+            loss += loss_i 
+            acc += acc_i
+            
+            if (i+1) % show_interval == 0:
+                loss /= show_interval
+                acc /= show_interval
+                print('train_loss = {}, train_acc = {}'.format(loss, acc))
+                loss = 0
+                acc = 0
+
 
 
 def decode(examples, model, beam_size=1, verbose=False, **kwargs):
@@ -169,7 +204,7 @@ def evaluate(examples, parser, evaluator, beam_size=1, verbose=False, return_dec
 
 
 
-def train(params):
+def train(params, train_dataloader, dev_dataloader):
     # load in train/dev set
     train_set = Dataset.from_bin_file(args.train_file)
 
@@ -182,15 +217,16 @@ def train(params):
     vocab = pickle.load(open(args.vocab, 'rb'))
     grammar = ASDLGrammar.from_text(open(args.asdl_file).read())
     transition_system = Registrable.by_name(args.transition_system)(grammar)
+    evaluator = ConalaEvaluator(transition_system, args=args)
 
     parser_cls = Registrable.by_name(args.parser)  # TODO: add arg
     model = parser_cls(args, vocab, transition_system)
     model.train()
 
-    evaluator = Registrable.by_name(args.evaluator)(transition_system, args=args)
-    if args.cuda: model.cuda()
+    if params.cuda: 
+        model.cuda()
 
-    optimizer_cls = eval('torch.optim.%s' % args.optimizer)  # FIXME: this is evil!
+    optimizer_cls = eval('torch.optim.%s' % params.optimizer)  # FIXME: this is evil!
     optimizer = optimizer_cls(model.parameters(), lr=args.lr)
 
     print('use glorot initialization', file=sys.stderr)
@@ -224,12 +260,12 @@ def train(params):
             loss.backward()
 
             # clip gradient
-            if args.clip_grad > 0.:
-                grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), args.clip_grad)
+            if params.clip_grad > 0.:
+                grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), params.clip_grad)
 
             optimizer.step()
 
-            if train_iter % args.log_every == 0:
+            if train_iter % params.log_every == 0:
                 log_str = '[Iter %d] encoder loss=%.5f' % (train_iter, report_loss / report_examples)
 
                 print(log_str, file=sys.stderr)
@@ -237,13 +273,13 @@ def train(params):
 
         print('[Epoch %d] epoch elapsed %ds' % (epoch, time.time() - epoch_begin), file=sys.stderr)
 
-        if args.save_all_models:
+        if params.save_all_models:
             model_file = args.save_to + '.iter%d.bin' % train_iter
             print('save model to [%s]' % model_file, file=sys.stderr)
             model.save(model_file)
 
         # perform validation
-        if args.dev_file:
+        if params.dev_file:
             if epoch % args.valid_every_epoch == 0:
                 print('[Epoch %d] begin validation' % epoch, file=sys.stderr)
                 eval_start = time.time()
@@ -262,8 +298,8 @@ def train(params):
         else:
             is_better = True
 
-        if args.decay_lr_every_epoch and epoch > args.lr_decay_after_epoch:
-            lr = optimizer.param_groups[0]['lr'] * args.lr_decay
+        if params.decay_lr_every_epoch and epoch > params.lr_decay_after_epoch:
+            lr = optimizer.param_groups[0]['lr'] * params.lr_decay
             print('decay learning rate to %f' % lr, file=sys.stderr)
 
             # set new lr
@@ -278,7 +314,7 @@ def train(params):
             model.save(model_file)
             # also save the optimizers' state
             torch.save(optimizer.state_dict(), args.save_to + '.optim.bin')
-        elif patience < args.patience and epoch >= args.lr_decay_after_epoch:
+        elif patience < params.patience and epoch >= args.lr_decay_after_epoch:
             patience += 1
             print('hit patience %d' % patience, file=sys.stderr)
 
