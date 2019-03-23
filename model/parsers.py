@@ -40,25 +40,26 @@ class Encoder(nn.Module):
         return outputs, (hidden_h, hidden_c)
         
 class Decoder(nn.Module): 
-    def __init__(self, action_embed_size, embed_size, hidden_size, code_size, token_size):
+    def __init__(self, action_embed_size, encoder_hidden_size, hidden_size, action_size, token_size):
         super(Decoder, self).__init__()
         
         self.action_embed_size = action_embed_size
-        self.embed_size = embed_size
-        self.code_size = code_size + 1 # add one for padding
+        self.encoder_hidden_size = encoder_hidden_size
         self.hidden_size = hidden_size
+        self.action_size = action_size + 1 # add one for padding
         self.token_size = token_size
 
-        self.emb = nn.Embedding(self.code_size, self.action_embed_size)
-        self.cell1 = nn.LSTMCell(self.embed_size, self.hidden_size)
+        self.emb = nn.Embedding(self.action_size, self.action_embed_size)
+        self.cell1 = nn.LSTMCell(self.encoder_hidden_size, self.hidden_size)
         self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
+        self.pointer_net = PointerNet() # TODO: arguments
         self.linear = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
             nn.ReLU(),
-            nn.Linear(self.hidden_size, self.code_size)
+            nn.Linear(self.hidden_size, self.action_size)
         )
-        self.linear_token = nn.Sequential(
+        self.linear_gen = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
             nn.ReLU(),
             nn.Linear(self.hidden_size, self.token_size),
@@ -67,7 +68,7 @@ class Decoder(nn.Module):
         for layer in self.linear.modules():
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
-        for layer in self.linear_token.modules():
+        for layer in self.linear_gen.modules():
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
         nn.init.xavier_normal(self.emb.weight.data)
@@ -77,7 +78,7 @@ class Decoder(nn.Module):
     def process_code(self, batched_actions_info):
         batch_idxs = []
         max_leng = 0
-        end_symbol = self.code_size
+        end_symbol = self.action_size
         for actions_info in batched_actions_info:
             idxs = [action_info.idx for action_info in actions_info]
             idxs.append(end_symbol)
@@ -109,12 +110,15 @@ class Decoder(nn.Module):
         hidden1, hidden2, hidden3 = encoder_hidden, encoder_hidden, encoder_hidden
         
         ## logits
-        logits_action_type = torch.DoubleTensor(batch_size, length, self.code_size)
+        logits_action_type = torch.DoubleTensor(batch_size, length, self.action_size)
         logits_copy_list = []
+        tgt_copy_list = []
         logits_gen_list = []
+        tgt_gen_list = []
         
         ## for each time step
         att_vecs = []
+
         for t in range(length):
             # previous action embedding
             if t == 0:
@@ -132,25 +136,39 @@ class Decoder(nn.Module):
             ## do linear inside for loop is inefficient, but it allows teacher forcing
             logits_action_type[:, t, :] = self.linear(hiddens[2][0])
 
+
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
+                encoding_info = sentence_encoding[perform_copy_ind, :, :]
+                hidden_state = hidden3[0][perform_copy_ind, :]
+                copy_logits = self.pointer_net(encoding_info, hidden_state)
+                src_token_ind = x[perform_copy_ind, t].src_token_position
+                assert src_token_ind != -1
+                logits_copy_list.append(copy_logits)
+                tgt_copy_list.append(src_token_ind)
+                
+            for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
+                hidden_state = hidden3[0][perform_gen_ind, :]
+                gen_logits = self.linear_gen(hidden_state)
+                token_ind = x[perform_gen_ind, t].token
+                assert token_ind is not None
+                logits_gen_list.append(gen_logits)
+                tgt_gen_list.append(token_ind)
 
-            torch.eq(padded_x[:, t], action_index_copy * torch.ones_like(padded_x[:, t])).tolist()
-            torch.eq(padded_x[:, t], action_index_gen * torch.ones_like(padded_x[:, t])).tolist()
-
-            
         ## padded eos symbols are not removed, thus
         ## calculated accuracy can be too high
-        return (logits_action_type.view(batch_size * length, -1), ), (, ), (, ) 
+        return (logits_action_type.view(batch_size * length, -1), padded_x), \
+               (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
+               (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
         
 class Model(nn.Module):
-    def __init__(self, code_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
+    def __init__(self, action_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
         super(Model, self).__init__()
         self.hyperParams = hyperParams
         self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
         self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
                                hyperParams.hidden_size, 
-                               code_size, token_size)
+                               action_size, token_size)
         self.loss = nn.CrossEntropyLoss()
         self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
         self.best_acc = best_acc
@@ -188,11 +206,11 @@ class Model(nn.Module):
         torch.save(self.params, path)
 
     @classmethod
-    def load(cls, code_size, hyperParams, token_size, word_size, encoder_lstm_layers=3):
+    def load(cls, action_size, hyperParams, token_size, word_size, encoder_lstm_layers=3):
         params = torch.load(hyperParams.load_model, map_location=lambda storage, loc: storage)
         saved_state = params['state_dict']
 
-        parser = cls(code_size, hyperParams, token_size, word_size, encoder_lstm_layers=encoder_lstm_layers)
+        parser = cls(action_size, hyperParams, token_size, word_size, encoder_lstm_layers=encoder_lstm_layers)
         parser.load_state_dict(saved_state)
 
         if hyperParams.cuda: 
