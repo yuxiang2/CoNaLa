@@ -64,10 +64,10 @@ class Decoder(nn.Module):
             nn.Linear(self.hidden_size, self.token_size),
         )
 
-        for layer in linear.modules():
+        for layer in self.linear.modules():
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
-        for layer in linear_token.modules():
+        for layer in self.linear_token.modules():
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
         nn.init.xavier_normal(self.emb.weight.data)
@@ -109,7 +109,7 @@ class Decoder(nn.Module):
         ## for each time step
         for t in range(length):
             embed_t = embed[:, t, :]
-            h_t, _, _ = decode_step(embed_t, [hidden1, hidden2, hidden3], sentence_encoding)
+            h_t, _, _ = self.decode_step(embed_t, [hidden1, hidden2, hidden3], sentence_encoding)
 
             ## do linear inside for loop is inefficient, but it allows teacher forcing
             scores[:, t, :] = self.linear(h_t)
