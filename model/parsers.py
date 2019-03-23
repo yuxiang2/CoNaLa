@@ -24,40 +24,40 @@ from model.pointer_net import PointerNet
 
 
 class Encoder(nn.Module):
-	def __init__(self, embed_size, hidden_size, word_size, lstm_layers=3):
-		super(Encoder, self).__init__()
-		self.emb = nn.Embedding(word_size, embed_size)
-		self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
+    def __init__(self, embed_size, hidden_size, word_size, lstm_layers=3):
+        super(Encoder, self).__init__()
+        self.emb = nn.Embedding(word_size, embed_size)
+        self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
         nn.init.xavier_normal(self.emb.weight.data)
-		
-	def forward(self, x):
-		embed = [self.emb(datapoint.long()) for datapoint in x]
-		packed = U.rnn.pack_sequence(embed)
-		outputs, hidden = self.rnn(packed, None)
-		hidden_h, hidden_c = hidden 
-		hidden_h = hidden_h[-1] + hidden_h[-2]
-		hidden_c = hidden_c[-1] + hidden_c[-2]
-		return outputs, (hidden_h, hidden_c)
-		
+        
+    def forward(self, x):
+        embed = [self.emb(datapoint.long()) for datapoint in x]
+        packed = U.rnn.pack_sequence(embed)
+        outputs, hidden = self.rnn(packed, None)
+        hidden_h, hidden_c = hidden 
+        hidden_h = hidden_h[-1] + hidden_h[-2]
+        hidden_c = hidden_c[-1] + hidden_c[-2]
+        return outputs, (hidden_h, hidden_c)
+        
 class Decoder(nn.Module): 
-	def __init__(self, action_embed_size, embed_size, hidden_size, code_size, token_size):
-		super(Decoder, self).__init__()
-		
+    def __init__(self, action_embed_size, embed_size, hidden_size, code_size, token_size):
+        super(Decoder, self).__init__()
+        
         self.action_embed_size = action_embed_size
         self.embed_size = embed_size
-		self.code_size = code_size + 1 # add one for padding
+        self.code_size = code_size + 1 # add one for padding
         self.hidden_size = hidden_size
         self.token_size = token_size
 
-		self.emb = nn.Embedding(self.code_size, self.action_embed_size)
-		self.cell1 = nn.LSTMCell(self.embed_size, self.hidden_size)
-		self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
-		self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
-		self.linear = nn.Sequential(
-			nn.Linear(self.hidden_size, self.hidden_size),
-			nn.ReLU(),
-			nn.Linear(self.hidden_size, self.code_size)
-		)
+        self.emb = nn.Embedding(self.code_size, self.action_embed_size)
+        self.cell1 = nn.LSTMCell(self.embed_size, self.hidden_size)
+        self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
+        self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
+        self.linear = nn.Sequential(
+            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.ReLU(),
+            nn.Linear(self.hidden_size, self.code_size)
+        )
         self.linear_token = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
             nn.ReLU(),
@@ -71,22 +71,22 @@ class Decoder(nn.Module):
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
         nn.init.xavier_normal(self.emb.weight.data)
-		
-	## pad code within a batch to the same length so 
-	## that we can do batch rnn
-	def process_code(self, codes):
-		N = len(codes)
-		maxlen = 0
-		eos = self.code_size - 1
-		for code in codes:
-			maxlen = max(maxlen, len(code))
+        
+    ## pad code within a batch to the same length so 
+    ## that we can do batch rnn
+    def process_code(self, codes):
+        N = len(codes)
+        maxlen = 0
+        eos = self.code_size - 1
+        for code in codes:
+            maxlen = max(maxlen, len(code))
 
-		padded_codes = torch.LongTensor(N, maxlen)
-		for i, code in enumerate(codes):
-			padded_codes[i, :len(code)] = code
-			padded_codes[i, len(code):] = eos
-		return padded_codes
-			
+        padded_codes = torch.LongTensor(N, maxlen)
+        for i, code in enumerate(codes):
+            padded_codes[i, :len(code)] = code
+            padded_codes[i, len(code):] = eos
+        return padded_codes
+            
     def decode_step(self, embed_t, hiddens, sentence_encoding):
         assert len(hiddens == 3)
         att_t = None  # TODO: calculate attention using sentence_encoding
@@ -95,28 +95,28 @@ class Decoder(nn.Module):
         h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
         return (h_t2, cell_t2), att_t
 
-	def decode(self, x, encoder_hidden, sentence_encoding):
-		padded_x = self.process_code(x)
-		length = len(padded_x[0])
-		embed = self.emb(padded_x)
-		
-		## initialize hidden states
-		hidden1, hidden2, hidden3 = encoder_hidden, encoder_hidden, encoder_hidden
-		
-		## scores is for storing logits
-		scores = torch.DoubleTensor(len(x), length, self.code_size)
-		
-		## for each time step
-		for t in range(length):
-			embed_t = embed[:, t, :]
+    def decode(self, x, encoder_hidden, sentence_encoding):
+        padded_x = self.process_code(x)
+        length = len(padded_x[0])
+        embed = self.emb(padded_x)
+        
+        ## initialize hidden states
+        hidden1, hidden2, hidden3 = encoder_hidden, encoder_hidden, encoder_hidden
+        
+        ## scores is for storing logits
+        scores = torch.DoubleTensor(len(x), length, self.code_size)
+        
+        ## for each time step
+        for t in range(length):
+            embed_t = embed[:, t, :]
             h_t, _, _ = decode_step(embed_t, [hidden1, hidden2, hidden3], sentence_encoding)
 
             ## do linear inside for loop is inefficient, but it allows teacher forcing
-			scores[:, t, :] = self.linear(h_t)
-			
-		## padded eos symbols are not removed, thus
-		## calculated accuracy can be too high
-		return scores.view(len(x) * length, -1), padded_x.view(-1)
+            scores[:, t, :] = self.linear(h_t)
+            
+        ## padded eos symbols are not removed, thus
+        ## calculated accuracy can be too high
+        return scores.view(len(x) * length, -1), padded_x.view(-1)
 
 
         #############################
@@ -171,45 +171,45 @@ class Decoder(nn.Module):
 
         att_vecs = torch.stack(att_vecs, dim=0)
         return att_vecs
-		
+        
 class Model(nn.Module):
-	def __init__(self, code_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
-		super(Model, self).__init__()
+    def __init__(self, code_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
+        super(Model, self).__init__()
         self.hyperParams = hyperParams
-		self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
-		self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
+        self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
+        self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
                                hyperParams.hidden_size, 
                                code_size, token_size)
-		self.loss = nn.CrossEntropyLoss()
-		self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
-		self.best_acc = best_acc
+        self.loss = nn.CrossEntropyLoss()
+        self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
+        self.best_acc = best_acc
 
     def score(self, batch_intent, batch_target):
         sentence_encoding, hidden = self.encoder(intent)
         scores, labels = self.decoder(code, hidden, sentence_encoding)
-		
-	def forward(self, intent, code, train=True):
-		hidden = self.encoder(intent)
-		scores, labels = self.decoder(code, hidden)
-		
-		# get statistics
-		_, predicted = torch.max(scores, 1)
-		num_correct = (predicted == labels).sum().item()
-		acc = float(num_correct) / len(predicted)
-		
-		if train:
-			# gradient descent
-			loss = self.loss(scores, labels)
-			self.opt.zero_grad()
-			# uncomment to use gradient clipping
-			# U.clip_grad_norm_(self.parameters(), 5.0)
-			loss.backward()
-			self.opt.step()
-			
-			return loss.item(), acc
-		else:
-			return acc
-		
+        
+    def forward(self, intent, code, train=True):
+        hidden = self.encoder(intent)
+        scores, labels = self.decoder(code, hidden)
+        
+        # get statistics
+        _, predicted = torch.max(scores, 1)
+        num_correct = (predicted == labels).sum().item()
+        acc = float(num_correct) / len(predicted)
+        
+        if train:
+            # gradient descent
+            loss = self.loss(scores, labels)
+            self.opt.zero_grad()
+            # uncomment to use gradient clipping
+            # U.clip_grad_norm_(self.parameters(), 5.0)
+            loss.backward()
+            self.opt.step()
+            
+            return loss.item(), acc
+        else:
+            return acc
+        
     def save(self, path):
         dir_name = os.path.dirname(path)
         if not os.path.exists(dir_name):
@@ -978,5 +978,3 @@ class Parser(nn.Module):
         parser.eval()
 
         return parser
-
-	
