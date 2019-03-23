@@ -3,12 +3,9 @@ import argparse
 import sys
 import six
 import torch
-from model import parser
-
+from model import tranx_model
 from common.registerable import Registrable
-
-if six.PY3:
-    from .example_processor import ConalaExampleProcessor
+from .processor import ConalaExampleProcessor
 
 
 class StandaloneParser(object):
@@ -18,11 +15,11 @@ class StandaloneParser(object):
     purposes
     """
 
-    def __init__(self, parser_name, model_path, example_processor_name, beam_size=5, cuda=False):
+    def __init__(self, parser_name, model_path, beam_size=5, cuda=False):
         print('load parser from [%s]' % model_path, file=sys.stderr)
 
         self.parser = parser = Registrable.by_name(parser_name).load(model_path, cuda=cuda).eval()
-        self.example_processor = Registrable.by_name(example_processor_name)(parser.transition_system)
+        self.example_processor = ConalaExampleProcessor(parser.transition_system)
         self.beam_size = beam_size
 
     def parse(self, utterance, debug=False):

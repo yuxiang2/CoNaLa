@@ -147,14 +147,5 @@ class TransitionSystem(object):
         elif lang == 'python3':
             from .lang.py3.py3_transition_system import Python3TransitionSystem
             return Python3TransitionSystem
-        elif lang == 'lambda_dcs':
-            from .lang.lambda_dcs.lambda_dcs_transition_system import LambdaCalculusTransitionSystem
-            return LambdaCalculusTransitionSystem
-        elif lang == 'prolog':
-            from .lang.prolog.prolog_transition_system import PrologTransitionSystem
-            return PrologTransitionSystem
-        elif lang == 'wikisql':
-            from .lang.sql.sql_transition_system import SqlTransitionSystem
-            return SqlTransitionSystem
 
         raise ValueError('unknown language %s' % lang)
