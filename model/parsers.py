@@ -24,7 +24,7 @@ from model.pointer_net import PointerNet
 
 
 class Encoder(nn.Module):
-    def __init__(self, embed_size, hidden_size, word_size, lstm_layers=3):
+    def __init__(self, embed_size, word_size, hidden_size, lstm_layers=3):
         super(Encoder, self).__init__()
         self.emb = nn.Embedding(word_size, embed_size)
         self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
@@ -40,17 +40,18 @@ class Encoder(nn.Module):
         return outputs, (hidden_h, hidden_c)
         
 class Decoder(nn.Module): 
-    def __init__(self, action_embed_size, encoder_hidden_size, hidden_size, action_size, token_size):
+    def __init__(self, action_embed_size, attn_size, encoder_hidden_size, hidden_size, action_size, token_size):
         super(Decoder, self).__init__()
         
         self.action_embed_size = action_embed_size
+        self.attn_size = attn_size
         self.encoder_hidden_size = encoder_hidden_size
         self.hidden_size = hidden_size
         self.action_size = action_size + 1 # add one for padding
         self.token_size = token_size
 
         self.emb = nn.Embedding(self.action_size, self.action_embed_size)
-        self.cell1 = nn.LSTMCell(self.encoder_hidden_size, self.hidden_size)
+        self.cell1 = nn.LSTMCell(self.encoder_hidden_size + self.attn_size, self.hidden_size)
         self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.pointer_net = PointerNet() # TODO: arguments
@@ -117,25 +118,22 @@ class Decoder(nn.Module):
         tgt_gen_list = []
         
         ## for each time step
-        att_vecs = []
-
         for t in range(length):
             # previous action embedding
             if t == 0:
+                # TODO
                 embed_tm1 = Variable(self.new_tensor(batch_size, self.decoder_lstm.input_size).zero_(), requires_grad=False)
             else:
                 embed_tm1 = embed[:, t - 1, :]
 
             # decode one step
             hiddens, att_t = decode_step(embed_tm1, [hidden1, hidden2, hidden3], sentence_encoding)
-            att_vecs.append(att_t)
 
             # update previous hidden state
             hidden1, hidden2, hidden3 = **hiddens
 
             ## do linear inside for loop is inefficient, but it allows teacher forcing
             logits_action_type[:, t, :] = self.linear(hiddens[2][0])
-
 
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
                 encoding_info = sentence_encoding[perform_copy_ind, :, :]
@@ -162,38 +160,21 @@ class Decoder(nn.Module):
 
         
 class Model(nn.Module):
-    def __init__(self, action_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
+    def __init__(self, hyperParams, action_size, token_size, word_size, action_index_copy, action_index_gen, best_acc=0.0, encoder_lstm_layers=3):
         super(Model, self).__init__()
         self.hyperParams = hyperParams
-        self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
-        self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
+        self.encoder = Encoder(hyperParams.embed_size, word_size, hyperParams.hidden_size, lstm_layers=encoder_lstm_layers)
+        self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.att_vec_size, hyperParams.hidden_size * 2, 
                                hyperParams.hidden_size, 
                                action_size, token_size)
         self.loss = nn.CrossEntropyLoss()
         self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
         self.best_acc = best_acc
         
-    def forward(self, intent, code, train=True):
-        hidden = self.encoder(intent)
-        scores, labels = self.decoder(code, hidden)
-        
-        # get statistics
-        _, predicted = torch.max(scores, 1)
-        num_correct = (predicted == labels).sum().item()
-        acc = float(num_correct) / len(predicted)
-        
-        if train:
-            # gradient descent
-            loss = self.loss(scores, labels)
-            self.opt.zero_grad()
-            # uncomment to use gradient clipping
-            # U.clip_grad_norm_(self.parameters(), 5.0)
-            loss.backward()
-            self.opt.step()
-            
-            return loss.item(), acc
-        else:
-            return acc
+    def forward(self, x):
+        intent, code = x
+        sentence_encoding, hidden = self.encoder(intent)
+        return self.decoder.decode(code, hidden, sentence_encoding, action_index_copy, action_index_gen)
         
     def save(self, path):
         dir_name = os.path.dirname(path)
