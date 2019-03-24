@@ -16,8 +16,7 @@ from common.registerable import Registrable
 from dataset.action_info import ActionInfo
 # from dataset.decode_hypothesis import DecodeHypothesis
 # from model import nn_utils
-from model.pointer_net import PointerNet
-
+import model.pointer_net as Pointer_Net
 
 class Encoder(nn.Module):
     def __init__(self, embed_size, word_size, hidden_size, lstm_layers=3):
@@ -65,15 +64,15 @@ class Decoder(nn.Module):
         self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
 
-        self.pointer_net = PointerNet(self.hidden_size)
+        self.pointer_net = Pointer_Net.PointerNet(self.encoder_hidden_size, self.hidden_size)
 
         self.linear = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.Linear(self.hidden_size + self.encoder_hidden_size, self.hidden_size),
             nn.ReLU(),
             nn.Linear(self.hidden_size, self.action_size)
         )
         self.linear_gen = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.Linear(self.hidden_size + self.encoder_hidden_size, self.hidden_size),
             nn.ReLU(),
             nn.Linear(self.hidden_size, self.token_size),
         )
@@ -140,6 +139,7 @@ class Decoder(nn.Module):
         attn_weights = F.softmax(attn_input, dim=1)
 
         ## (batch, 1, maxlen) bmm (batch, seq_len，hidden_size)
+        ## (batch, encoder_hidden_size)
         att_context = torch.bmm(attn_weights.unsqueeze(1),
                                 encoder_outputs).squeeze()
 
@@ -174,25 +174,30 @@ class Decoder(nn.Module):
                 embed_tm1 = embed[:, t - 1, :]
 
             # decode one step
-            # att_t (batch, 1, hidden_size)
+            # att_t (batch, hidden_size)
             hiddens, att_context = self.decode_step(embed_tm1, hiddens, sentence_encoding, batch_lens, att_context)
 
             ## do linear inside for loop is inefficient, but it allows teacher forcing
-            logits_action_type[:, t, :] = self.linear(hiddens[2][0])
+            hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
+            logits_action_type[:, t, :] = self.linear(hiddens_with_attention)
 
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
-                encoding_info = sentence_encoding[:, perform_copy_ind, :]
-                hidden_state = hidden3[0][perform_copy_ind, :]
+                encoding_info = sentence_encoding[perform_copy_ind, :, :]
+                hidden_state = hiddens[2][0][perform_copy_ind, :]
+
                 copy_logits = self.pointer_net(encoding_info, act_lens[perform_copy_ind], hidden_state)
-                src_token_ind = x[perform_copy_ind, t].src_token_position
+                src_token_ind = batch_act_infos[perform_copy_ind][t].src_token_position
                 assert src_token_ind != -1
                 logits_copy_list.append(copy_logits)
                 tgt_copy_list.append(src_token_ind)
 
             for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
-                hidden_state = hidden3[0][perform_gen_ind, :]
-                gen_logits = self.linear_gen(hidden_state)
-                token_ind = x[perform_gen_ind, t].token
+                hidden_state = hiddens[2][0][perform_gen_ind, :]
+                att_context_gen = att_context[perform_gen_ind, :]
+                gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
+
+                gen_logits = self.linear_gen(gen_hidden_with_att)
+                token_ind = batch_act_infos[perform_gen_ind][t].token
                 assert token_ind is not None
                 logits_gen_list.append(gen_logits)
                 tgt_gen_list.append(token_ind)
