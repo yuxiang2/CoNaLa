@@ -29,31 +29,39 @@ class Encoder(nn.Module):
         self.emb = nn.Embedding(word_size, embed_size)
         self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
         nn.init.xavier_normal(self.emb.weight.data)
-        
+
     def forward(self, x):
         embed = [self.emb(datapoint.long()) for datapoint in x]
         packed = U.rnn.pack_sequence(embed)
         outputs, hidden = self.rnn(packed, None)
-        hidden_h, hidden_c = hidden 
+        hidden_h, hidden_c = hidden
         hidden_h = hidden_h[-1] + hidden_h[-2]
         hidden_c = hidden_c[-1] + hidden_c[-2]
         return outputs, (hidden_h, hidden_c)
-        
-class Decoder(nn.Module): 
+
+
+class Decoder(nn.Module):
     def __init__(self, action_embed_size, encoder_hidden_size, hidden_size, action_size, token_size):
         super(Decoder, self).__init__()
-        
+
         self.action_embed_size = action_embed_size
         self.encoder_hidden_size = encoder_hidden_size
         self.hidden_size = hidden_size
-        self.action_size = action_size + 1 # add one for padding
+        self.action_size = action_size + 1  # add one for padding
         self.token_size = token_size
-
         self.emb = nn.Embedding(self.action_size, self.action_embed_size)
+
+        ## calculate attention weights
+        self.attn = nn.Linear(self.action_embed_size + self.hidden_size, max_length)
+        ## calculate attention context
+        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+
         self.cell1 = nn.LSTMCell(self.encoder_hidden_size, self.hidden_size)
         self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
-        self.pointer_net = PointerNet() # TODO: arguments
+
+        self.pointer_net = PointerNet(self.hidden_size)  # TODO: arguments
+
         self.linear = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
             nn.ReLU(),
@@ -72,7 +80,7 @@ class Decoder(nn.Module):
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal(layer.weight)
         nn.init.xavier_normal(self.emb.weight.data)
-        
+
     ## pad code within a batch to the same length so 
     ## that we can do batch rnn
     def process_code(self, batched_actions_info):
@@ -84,68 +92,96 @@ class Decoder(nn.Module):
             idxs.append(end_symbol)
             max_leng = max(max_leng, len(idxs))
             batch_idxs.append(idxs)
-            
+
         tensor_batch_idxs = torch.LongTensor(len(batched_actions_info), maxlen)
         for i in range(len(batch_idxs)):
             origin_leng = len(batch_idxs[i])
-            tensor_batch_idxs[i,:origin_leng] = batch_idxs[i]
-            tensor_batch_idxs[i,origin_leng:] = end_symbol
+            tensor_batch_idxs[i, :origin_leng] = batch_idxs[i]
+            tensor_batch_idxs[i, origin_leng:] = end_symbol
         return tensor_batch_idxs
-            
-    def decode_step(self, action_embed_tm1, hiddens, sentence_encoding):
+
+    def decode_step(self, action_embed_tm1, hiddens, sentence_encoding, batch_lens):
+        """
+        :param action_embed_tm1: prev action embedding as input （batch, hidden_size)
+        :param hiddens: decoder hiddens (3, batch, hidden_size)
+        :param sentence_encoding: encoder output (seq_len, batch, hidden_size)
+        :return:
+        """
         assert len(hiddens) == 3
-        att_t = None  # TODO: calculate attention using sentence_encoding
+
+        ################################################################################
+        ## attentioned result for encoder output
+        hidden_for_att = hiddens[2][0]
+        intput = action_embed_tm1
+        encoder_outputs = sentence_encoding
+
+        attn_input = self.attn(torch.cat((intput.squeeze(), hidden_for_att), 1))
+        for i, length in enumerate(batch_lens):
+            attn_input[i,length:] = -float('inf')
+
+        attn_weights = F.softmax(attn_input, dim=1)
+        ## (batch, 1, maxlen) bmm (batch, seq_len，hidden_size)
+        attn_applied = torch.bmm(attn_weights.unsqueeze(1),
+                                 encoder_outputs.permute(1, 0, 2)).squeeze()
+        ##to_combine_tmp (batch, 2* hidden_size)
+        to_combine_tmp = torch.cat((intput, attn_applied), 1)
+        att_t = self.attn_combine(to_combine_tmp).unsqueeze(1)
+        ###############################################################################
+
         h_t0, cell_t0 = self.cell1(action_embed_tm1, hiddens[0])
         h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
         h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
         return [(h_t0, cell_t0), (h_t1, cell_t1), (h_t2, cell_t2)], att_t
 
-    def decode(self, x, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen):
+    def decode(self, x, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, batch_lens):
         batch_size = len(x)
+        src_token_lens = [len(tokens) for tokens in x]
+
         padded_x = self.process_code(x)
         length = len(padded_x[0])
         embed = self.emb(padded_x)
-        
+
         ## initialize hidden states
         hidden1, hidden2, hidden3 = encoder_hidden, encoder_hidden, encoder_hidden
-        
+
         ## logits
         logits_action_type = torch.DoubleTensor(batch_size, length, self.action_size)
         logits_copy_list = []
         tgt_copy_list = []
         logits_gen_list = []
         tgt_gen_list = []
-        
+
         ## for each time step
         att_vecs = []
 
         for t in range(length):
             # previous action embedding
             if t == 0:
-                embed_tm1 = Variable(self.new_tensor(batch_size, self.decoder_lstm.input_size).zero_(), requires_grad=False)
+                embed_tm1 = Variable(self.new_tensor(batch_size, self.decoder_lstm.input_size).zero_(),
+                                     requires_grad=False)
             else:
                 embed_tm1 = embed[:, t - 1, :]
 
             # decode one step
-            hiddens, att_t = decode_step(embed_tm1, [hidden1, hidden2, hidden3], sentence_encoding)
+            # att_t (batch, 1, hidden_size)
+            hiddens, att_t = self.decode_step(embed_tm1, [hidden1, hidden2, hidden3], sentence_encoding, batch_lens)
             att_vecs.append(att_t)
 
             # update previous hidden state
-            hidden1, hidden2, hidden3 = **hiddens
+            hidden1, hidden2, hidden3 = ** hiddens
 
             ## do linear inside for loop is inefficient, but it allows teacher forcing
             logits_action_type[:, t, :] = self.linear(hiddens[2][0])
 
-
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
-                encoding_info = sentence_encoding[perform_copy_ind, :, :]
+                encoding_info = sentence_encoding[:, perform_copy_ind, :]
                 hidden_state = hidden3[0][perform_copy_ind, :]
-                copy_logits = self.pointer_net(encoding_info, hidden_state)
+                copy_logits = self.pointer_net(encoding_info, src_token_lens, hidden_state)
                 src_token_ind = x[perform_copy_ind, t].src_token_position
                 assert src_token_ind != -1
                 logits_copy_list.append(copy_logits)
                 tgt_copy_list.append(src_token_ind)
-                
+
             for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
                 hidden_state = hidden3[0][perform_gen_ind, :]
                 gen_logits = self.linear_gen(hidden_state)
@@ -160,28 +196,29 @@ class Decoder(nn.Module):
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
-        
+
 class Model(nn.Module):
     def __init__(self, action_size, hyperParams, token_size, word_size, best_acc=0.0, encoder_lstm_layers=3):
         super(Model, self).__init__()
         self.hyperParams = hyperParams
-        self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size, lstm_layers=encoder_lstm_layers)
-        self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size, 
-                               hyperParams.hidden_size, 
+        self.encoder = Encoder(hyperParams.embed_size, hyperParams.hidden_size, word_size,
+                               lstm_layers=encoder_lstm_layers)
+        self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.embed_size,
+                               hyperParams.hidden_size,
                                action_size, token_size)
         self.loss = nn.CrossEntropyLoss()
         self.opt = torch.optim.Adam(self.parameters(), lr=hyperParams.lr)
         self.best_acc = best_acc
-        
+
     def forward(self, intent, code, train=True):
-        hidden = self.encoder(intent)
-        scores, labels = self.decoder(code, hidden)
-        
+        hidden = self.encoder(intent) # Todo
+        scores, labels = self.decoder(code, hidden) # Todo batch_lens, encoder_output
+
         # get statistics
         _, predicted = torch.max(scores, 1)
         num_correct = (predicted == labels).sum().item()
         acc = float(num_correct) / len(predicted)
-        
+
         if train:
             # gradient descent
             loss = self.loss(scores, labels)
@@ -190,11 +227,11 @@ class Model(nn.Module):
             # U.clip_grad_norm_(self.parameters(), 5.0)
             loss.backward()
             self.opt.step()
-            
+
             return loss.item(), acc
         else:
             return acc
-        
+
     def save(self, path):
         dir_name = os.path.dirname(path)
         if not os.path.exists(dir_name):
@@ -213,7 +250,7 @@ class Model(nn.Module):
         parser = cls(action_size, hyperParams, token_size, word_size, encoder_lstm_layers=encoder_lstm_layers)
         parser.load_state_dict(saved_state)
 
-        if hyperParams.cuda: 
+        if hyperParams.cuda:
             parser = parser.cuda()
         parser.eval()
         return parser
