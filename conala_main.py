@@ -159,24 +159,24 @@ def train(model, train_dataloader, dev_dataloader, params):
                 print("GenToken total loss: {}".format(loss2.data + loss3.data))
                 report_loss = report_examples = 0.
 
-        print('[Epoch %d] epoch elapsed %ds' % (epoch, time.time() - epoch_begin), file=sys.stdout)
+        print('[Epoch %d] epoch elapsed %ds' % (epoch, time.time() - epoch_begin))
 
         # if params.save_all_models:
         #     model_file = params.save_to + '.iter%d.bin' % train_iter
         #     print('save model to [%s]' % model_file, file=sys.stderr)
         #     model.save(model_file)
 
-        if params.decay_lr_every_epoch and epoch > params.lr_decay_after_epoch:
-            lr = optimizer.param_groups[0]['lr'] * params.lr_decay
-            print('decay learning rate to %f' % lr, file=sys.stderr)
+        # if params.decay_lr_every_epoch and epoch > params.lr_decay_after_epoch:
+            # lr = optimizer.param_groups[0]['lr'] * params.lr_decay
+            # print('decay learning rate to %f' % lr, file=sys.stderr)
 
-            # set new lr
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
+            # # set new lr
+            # for param_group in optimizer.param_groups:
+                # param_group['lr'] = lr
 
-        if epoch == params.max_epoch:
-            print('reached max epoch, stop!', file=sys.stderr)
-            exit(0)
+        # if epoch == params.max_epoch:
+            # print('reached max epoch, stop!', file=sys.stderr)
+            # exit(0)
 
 if __name__ == '__main__':
     directory = './conala-corpus/'
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     for code in train_codes:
         train_actions.append(ast_action.code2actions(code))
 
-    word_lst = P.vocab_list(train_intent, cut_freq=5)
+    word_lst = P.vocab_list(train_intent, cut_freq=2)
     act_lst, token_lst = P.action_list(train_actions, cut_freq=5)
 
     word2num = dict(zip(word_lst, range(0,len(word_lst))))
@@ -209,10 +209,12 @@ if __name__ == '__main__':
 
     train_loader = P.get_train_loader(train_intent, train_actions, word2num, act2num, token2num)
     test_loader = P.get_test_loader(test_intent, word2num)
+    
+    action_index_copy = act2num[P.GenTokenAction('copy')]
+    action_index_gen = act2num[P.GenTokenAction('token')]
 
     if hyperParams.mode == 'train':
         # TODO: figure out the index of copy and genToken in action list
-        action_index_copy, action_index_gen = , 
         model = Model(hyperParams, action_size=len(act_lst), token_size=len(token_lst), word_size=len(word_lst), 
                       action_index_copy, action_index_gen, encoder_lstm_layers=3)
         train(model, train_loader, dev_loader, params)

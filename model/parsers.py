@@ -24,16 +24,17 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.emb = nn.Embedding(word_size, embed_size)
         self.rnn = nn.LSTM(embed_size, int(hidden_size / 2), num_layers=lstm_layers, bidirectional=True)
-        nn.init.xavier_normal(self.emb.weight.data)
+        nn.init.xavier_normal_(self.emb.weight.data)
 
     def forward(self, x):
         embed = [self.emb(datapoint.long()) for datapoint in x]
         packed = U.rnn.pack_sequence(embed)
-        outputs, hidden = self.rnn(packed, None)
+        outputs_packed, hidden = self.rnn(packed, None)
+        outputs, lens = U.rnn.pad_packed_sequence(outputs_packed)
         hidden_h, hidden_c = hidden
         hidden_h = hidden_h[-1] + hidden_h[-2]
         hidden_c = hidden_c[-1] + hidden_c[-2]
-        return outputs, (hidden_h, hidden_c)
+        return outputs, lens, (hidden_h, hidden_c)
         
 class Decoder(nn.Module): 
     def __init__(self, action_embed_size, attn_size, encoder_hidden_size, hidden_size, action_size, token_size):
@@ -48,16 +49,15 @@ class Decoder(nn.Module):
         self.token_size = token_size
         self.emb = nn.Embedding(self.action_size, self.action_embed_size)
 
-        ## calculate attention weights
-        self.attn = nn.Linear(self.action_embed_size + self.hidden_size, max_length)
-        ## calculate attention context
-        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        # these two are for attention
+        self.encoder_value_act_type = nn.Linear(self.encoder_hidden_size, self.attn_size)
+        self.encoder_value_copy = nn.Linear(self.encoder_hidden_size, self.attn_size)
 
         self.cell1 = nn.LSTMCell(self.action_embed_size, self.hidden_size)
         self.cell2 = nn.LSTMCell(self.hidden_size, self.hidden_size)
         self.cell3 = nn.LSTMCell(self.hidden_size, self.hidden_size)
 
-        self.pointer_net = PointerNet(self.hidden_size)  # TODO: arguments
+        self.pointer_net = PointerNet(self.hidden_size)
 
         self.linear = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
@@ -72,28 +72,28 @@ class Decoder(nn.Module):
 
         for layer in self.linear.modules():
             if isinstance(layer, nn.Linear):
-                nn.init.xavier_normal(layer.weight)
+                nn.init.xavier_normal_(layer.weight)
         for layer in self.linear_gen.modules():
             if isinstance(layer, nn.Linear):
-                nn.init.xavier_normal(layer.weight)
-        nn.init.xavier_normal(self.emb.weight.data)
+                nn.init.xavier_normal_(layer.weight)
+        nn.init.xavier_normal_(self.emb.weight.data)
 
     ## pad code within a batch to the same length so 
     ## that we can do batch rnn
     def process_code(self, batched_actions_info):
         batch_idxs = []
         max_leng = 0
-        end_symbol = self.action_size
+        end_symbol = self.action_size - 1
         for actions_info in batched_actions_info:
             idxs = [action_info.idx for action_info in actions_info]
             idxs.append(end_symbol)
             max_leng = max(max_leng, len(idxs))
             batch_idxs.append(idxs)
 
-        tensor_batch_idxs = torch.LongTensor(len(batched_actions_info), maxlen)
+        tensor_batch_idxs = torch.LongTensor(len(batched_actions_info), max_leng)
         for i in range(len(batch_idxs)):
             origin_leng = len(batch_idxs[i])
-            tensor_batch_idxs[i, :origin_leng] = batch_idxs[i]
+            tensor_batch_idxs[i, :origin_leng] = torch.LongTensor(batch_idxs[i])
             tensor_batch_idxs[i, origin_leng:] = end_symbol
         return tensor_batch_idxs
 
@@ -107,41 +107,45 @@ class Decoder(nn.Module):
         assert len(hiddens) == 3
 
         ################################################################################
+        values = self.encoder_value_act_type(sentence_encoding)
+        print(values.size())
+        ################################################################################
         ## attentioned result for encoder output
-        hidden_for_att = hiddens[2][0]
-        intput = action_embed_tm1
-        encoder_outputs = sentence_encoding
+        # hidden_for_att = hiddens[2][0]
+        # intput = action_embed_tm1
+        # encoder_outputs = sentence_encoding
 
-        attn_input = self.attn(torch.cat((intput.squeeze(), hidden_for_att), 1))
-        for i, length in enumerate(batch_lens):
-            attn_input[i,length:] = -float('inf')
+        # attn_input = self.attn(torch.cat((intput.squeeze(), hidden_for_att), 1))
+        # for i, length in enumerate(batch_lens):
+            # attn_input[i,length:] = -float('inf')
 
-        attn_weights = F.softmax(attn_input, dim=1)
-        ## (batch, 1, maxlen) bmm (batch, seq_len，hidden_size)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(1),
-                                 encoder_outputs.permute(1, 0, 2)).squeeze()
-        ##to_combine_tmp (batch, 2* hidden_size)
-        to_combine_tmp = torch.cat((intput, attn_applied), 1)
-        att_t = self.attn_combine(to_combine_tmp).unsqueeze(1)
+        # attn_weights = F.softmax(attn_input, dim=1)
+        # ## (batch, 1, maxlen) bmm (batch, seq_len，hidden_size)
+        # attn_applied = torch.bmm(attn_weights.unsqueeze(1),
+                                 # encoder_outputs.permute(1, 0, 2)).squeeze()
+        # ##to_combine_tmp (batch, 2* hidden_size)
+        # to_combine_tmp = torch.cat((intput, attn_applied), 1)
+        # att_t = self.attn_combine(to_combine_tmp).unsqueeze(1)
         ###############################################################################
 
-        h_t0, cell_t0 = self.cell1(action_embed_tm1, hiddens[0])
-        h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
-        h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
-        return [(h_t0, cell_t0), (h_t1, cell_t1), (h_t2, cell_t2)], att_t
+        return 
+        # h_t0, cell_t0 = self.cell1(action_embed_tm1, hiddens[0])
+        # h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
+        # h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
+        # return [(h_t0, cell_t0), (h_t1, cell_t1), (h_t2, cell_t2)], att_t
 
-    def decode(self, x, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, batch_lens):
-        batch_size = len(x)
-        src_token_lens = [len(tokens) for tokens in x]
+    def decode(self, batch_act_infos, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, batch_lens):
+        batch_size = len(batch_act_infos)
+        act_lens = [len(act_infos) for act_infos in batch_act_infos]
 
-        padded_x = self.process_code(x)
+        padded_x = self.process_code(batch_act_infos)
         length = len(padded_x[0])
         embed = self.emb(padded_x)
 
         ## initialize hidden states
         hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
 
-        ## logits
+        ## logits for classify action_types, tokens, copy_pos
         logits_action_type = torch.DoubleTensor(batch_size, length, self.action_size)
         logits_copy_list = []
         tgt_copy_list = []
@@ -152,42 +156,40 @@ class Decoder(nn.Module):
         for t in range(length):
             # previous action embedding
             if t == 0:
-                # TODO
-                embed_tm1 = Variable(self.new_tensor(batch_size, self.decoder_lstm.input_size).zero_(),
-                                     requires_grad=False)
+                ## if no previous action, initialize to zero vector
+                embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
             else:
                 embed_tm1 = embed[:, t - 1, :]
 
             # decode one step
             # att_t (batch, 1, hidden_size)
             hiddens, att_t = self.decode_step(embed_tm1, hiddens, sentence_encoding, batch_lens)
-            att_vecs.append(att_t)
 
-            ## do linear inside for loop is inefficient, but it allows teacher forcing
-            logits_action_type[:, t, :] = self.linear(hiddens[2][0])
+            # ## do linear inside for loop is inefficient, but it allows teacher forcing
+            # logits_action_type[:, t, :] = self.linear(hiddens[2][0])
 
-            for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
-                encoding_info = sentence_encoding[:, perform_copy_ind, :]
-                hidden_state = hidden3[0][perform_copy_ind, :]
-                copy_logits = self.pointer_net(encoding_info, src_token_lens[perform_copy_ind], hidden_state)
-                src_token_ind = x[perform_copy_ind, t].src_token_position
-                assert src_token_ind != -1
-                logits_copy_list.append(copy_logits)
-                tgt_copy_list.append(src_token_ind)
+            # for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
+                # encoding_info = sentence_encoding[:, perform_copy_ind, :]
+                # hidden_state = hidden3[0][perform_copy_ind, :]
+                # copy_logits = self.pointer_net(encoding_info, act_lens[perform_copy_ind], hidden_state)
+                # src_token_ind = x[perform_copy_ind, t].src_token_position
+                # assert src_token_ind != -1
+                # logits_copy_list.append(copy_logits)
+                # tgt_copy_list.append(src_token_ind)
 
-            for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
-                hidden_state = hidden3[0][perform_gen_ind, :]
-                gen_logits = self.linear_gen(hidden_state)
-                token_ind = x[perform_gen_ind, t].token
-                assert token_ind is not None
-                logits_gen_list.append(gen_logits)
-                tgt_gen_list.append(token_ind)
+            # for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
+                # hidden_state = hidden3[0][perform_gen_ind, :]
+                # gen_logits = self.linear_gen(hidden_state)
+                # token_ind = x[perform_gen_ind, t].token
+                # assert token_ind is not None
+                # logits_gen_list.append(gen_logits)
+                # tgt_gen_list.append(token_ind)
 
-        ## padded eos symbols are not removed, thus
-        ## calculated accuracy can be too high
-        return (logits_action_type.view(batch_size * length, -1), padded_x), \
-               (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
-               (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
+        # ## padded eos symbols are not removed, thus
+        # ## calculated accuracy can be too high
+        # return (logits_action_type.view(batch_size * length, -1), padded_x), \
+               # (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
+               # (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
 
 class Model(nn.Module):
@@ -197,11 +199,13 @@ class Model(nn.Module):
         self.encoder = Encoder(hyperParams.embed_size, word_size, hyperParams.hidden_size, lstm_layers=encoder_lstm_layers)
         self.decoder = Decoder(hyperParams.action_embed_size, hyperParams.att_vec_size, hyperParams.hidden_size * 2, 
                                hyperParams.hidden_size, action_size, token_size)
+        self.action_index_copy = action_index_copy
+        self.action_index_gen = action_index_gen
         
     def forward(self, x):
-        intent, code = x
-        sentence_encoding, hidden = self.encoder(intent)
-        return self.decoder.decode(code, hidden, sentence_encoding, action_index_copy, action_index_gen)
+        intent, batch_act_infos = x
+        sentence_encoding, batch_lens, hidden = self.encoder(intent)
+        return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy, self.action_index_gen, batch_lens)
         
     def save(self, path):
         dir_name = os.path.dirname(path)

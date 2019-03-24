@@ -50,9 +50,8 @@ def vocab_list(sentences, sos_eos=False, cut_freq=0):
     if sos_eos:
         vocab.append('<sos>')
         vocab.append('<eos>')
-        
-    vocab2num = dict(zip(vocab, range(0,len(vocab))))
-    return vocab, vocab
+
+    return vocab
     
 def action_list(actions_lst, cut_freq=0):
     act_table = set()
