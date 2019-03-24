@@ -1,4 +1,4 @@
-import nltk
+# import nltk
 from collections import Counter
 import torch
 from torch.utils.data import Dataset, DataLoader

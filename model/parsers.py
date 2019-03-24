@@ -34,6 +34,8 @@ class Encoder(nn.Module):
         hidden_h, hidden_c = hidden
         hidden_h = hidden_h[-1] + hidden_h[-2]
         hidden_c = hidden_c[-1] + hidden_c[-2]
+        outputs = outputs.permute(1, 0, 2)
+        outputs = outputs.contiguous()
         return outputs, lens, (hidden_h, hidden_c)
         
 class Decoder(nn.Module): 
@@ -105,10 +107,20 @@ class Decoder(nn.Module):
         :return:
         """
         assert len(hiddens) == 3
+        
+        print(action_embed_tm1.size())
+        print(hiddens[0][0].size())
+        print(hiddens[0][1].size())
+        print(self.action_embed_size)
+        
+        h_t0, cell_t0 = self.cell1(action_embed_tm1, (hiddens[0][0], hiddens[0][1]))
+        h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
+        h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
 
         ################################################################################
-        values = self.encoder_value_act_type(sentence_encoding)
-        print(values.size())
+        encoder_hiddens_flatten = sentence_encoding.view(-1, sentence_encoding.size(2))
+        attn_features = torch.cat(encoder_hiddens_flatten, h_t2)
+        print(attn_features.size())
         ################################################################################
         ## attentioned result for encoder output
         # hidden_for_att = hiddens[2][0]
@@ -128,7 +140,6 @@ class Decoder(nn.Module):
         # att_t = self.attn_combine(to_combine_tmp).unsqueeze(1)
         ###############################################################################
 
-        return 
         # h_t0, cell_t0 = self.cell1(action_embed_tm1, hiddens[0])
         # h_t1, cell_t1 = self.cell2(h_t0, hiddens[1])
         # h_t2, cell_t2 = self.cell3(h_t1, hiddens[2])
