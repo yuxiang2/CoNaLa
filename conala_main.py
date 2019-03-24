@@ -3,7 +3,6 @@
 
 """ This script includes the high level training and evaluating routines. """
 
-
 from __future__ import print_function
 from itertools import chain
 
@@ -14,25 +13,23 @@ import os
 import os.path
 import sys
 import time
-import token
-import tokenize
+#import token
+#import tokenize
 import torch
-from tqdm import tqdm
-import traceback
+#from tqdm import tqdm
+#import traceback
 
 
-from asdl import *
-from asdl.asdl import ASDLGrammar
 from common.registerable import Registrable
-from common.utils import update_args, init_arg_parser
 #from dataset import Dataset, Example
 from dataset import *
 #import dataset.bleu_score as bleu_score
 #from dataset.evaluator import ConalaEvaluator
-from dataset.util import tokenize_for_bleu_eval
-from model import nn_utils, utils
-from model.parsers import Parser
-from model.utils import GloveHelper, get_parser_class
+#from dataset.util import tokenize_for_bleu_eval
+#from model import nn_utils, utils
+from model.parsers import Model
+#from model.utils import GloveHelper, get_parser_class
+import preprocess_temp as P
 
 
 hyperParamMap = {
@@ -182,9 +179,43 @@ def train(model, train_dataloader, dev_dataloader, params):
             exit(0)
 
 if __name__ == '__main__':
-    if hyperParams.mode == 'train':
+    directory = './conala-corpus/'
+    train_file = directory + 'train.json'
+    test_file = directory + 'test.json'
+
+    with open(train_file) as f:
+        train_data = json.load(f)
         
-        train(hyperParams)
+    with open(test_file) as f:
+        test_data = json.load(f)
+
+    # intent processing includes lowercase, remove punctuation'?'
+    train_intent, train_codes = P.process_data(train_data)
+    test_intent, test_codes = P.process_data(test_data)
+
+    # this class is used for code2actions and actions2code
+    ast_action = P.Ast_Action()
+
+    train_actions = []
+    for code in train_codes:
+        train_actions.append(ast_action.code2actions(code))
+
+    word_lst = P.vocab_list(train_intent, cut_freq=5)
+    act_lst, token_lst = P.action_list(train_actions, cut_freq=5)
+
+    word2num = dict(zip(word_lst, range(0,len(word_lst))))
+    act2num = dict(zip(act_lst, range(0,len(act_lst))))
+    token2num = dict(zip(token_lst, range(0,len(token_lst))))
+
+    train_loader = P.get_train_loader(train_intent, train_actions, word2num, act2num, token2num)
+    test_loader = P.get_test_loader(test_intent, word2num)
+
+    if hyperParams.mode == 'train':
+        # TODO: figure out the index of copy and genToken in action list
+        action_index_copy, action_index_gen = , 
+        model = Model(hyperParams, action_size=len(act_lst), token_size=len(token_lst), word_size=len(word_lst), 
+                      action_index_copy, action_index_gen, encoder_lstm_layers=3)
+        train(model, train_loader, dev_loader, params)
     # elif hyperParams.mode == 'test':
     #     test(hyperParams)
     else:
