@@ -176,7 +176,7 @@ class Decoder(nn.Module):
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
                 encoding_info = sentence_encoding[:, perform_copy_ind, :]
                 hidden_state = hidden3[0][perform_copy_ind, :]
-                copy_logits = self.pointer_net(encoding_info, src_token_lens, hidden_state)
+                copy_logits = self.pointer_net(encoding_info, src_token_lens[perform_copy_ind], hidden_state)
                 src_token_ind = x[perform_copy_ind, t].src_token_position
                 assert src_token_ind != -1
                 logits_copy_list.append(copy_logits)
