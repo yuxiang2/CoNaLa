@@ -34,7 +34,7 @@ class PointerNet(nn.Module):
 
         # Variable(max_len, 1)
         lineared_att = self.attn(att_features).squeeze()
-        lineared_att[src_token_len:] = -float('inf')
+        # lineared_att[src_token_len:] = -float('inf')
 
         # attn_weights = F.softmax(attn_input, dim=1)
         # return attn_weights

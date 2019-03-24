@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils as U
-from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
@@ -35,6 +34,7 @@ class Encoder(nn.Module):
         hidden_c = hidden_c[-1] + hidden_c[-2]
         outputs = outputs.permute(1, 0, 2)
         outputs = outputs.contiguous()
+        # print(outputs)
         return outputs, lens, (hidden_h, hidden_c)
 
 
@@ -134,8 +134,8 @@ class Decoder(nn.Module):
         att_features = torch.cat((encoder_outputs, hidden_for_att), 2).view(batch_size * max_length, -1)
         attn_input = self.attn(att_features)
         attn_input = attn_input.view(batch_size, max_length)
-        for i, length in enumerate(batch_lens):
-            attn_input[i, length:] = -float('inf')
+        # for i, length in enumerate(batch_lens):
+            # attn_input[i, length:] = -float('inf')
         attn_weights = F.softmax(attn_input, dim=1)
 
         ## (batch, 1, maxlen) bmm (batch, seq_len，hidden_size)
@@ -184,7 +184,6 @@ class Decoder(nn.Module):
             for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
                 encoding_info = sentence_encoding[perform_copy_ind, :, :]
                 hidden_state = hiddens[2][0][perform_copy_ind, :]
-
                 copy_logits = self.pointer_net(encoding_info, act_lens[perform_copy_ind], hidden_state)
                 src_token_ind = batch_act_infos[perform_copy_ind][t].src_token_position
                 assert src_token_ind != -1
@@ -204,7 +203,7 @@ class Decoder(nn.Module):
 
         ## padded eos symbols are not removed, thus
         ## calculated accuracy can be too high
-        return (logits_action_type.view(batch_size * length, -1), padded_x), \
+        return (logits_action_type.view(batch_size * length, -1), padded_x.view(-1)), \
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
