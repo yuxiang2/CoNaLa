@@ -82,6 +82,9 @@ hyperParamMap = {
     'primitive_token_label_smoothing': 0.0, # Apply label smoothing when predicting primitive tokens
     'src_token_label_smoothing': 0.0,       # Apply label smoothing in reconstruction model when predicting source tokens
     'negative_sample_type': 'best',         # 
+    'action_lst': None,
+    'word_lst': None,
+    'token_lst': None,
 
     #### training schedule details ####
     'valid_metric': 'acc',                # Metric used for validation
@@ -113,6 +116,7 @@ hyperParamMap = {
 
 HyperParams = namedtuple('HyperParams', list(hyperParamMap.keys()), verbose=False)
 hyperParams = HyperParams(**hyperParamMap)
+
 
 
 def train(model, train_loader, dev_loader, params):
@@ -188,7 +192,7 @@ def test(model, params, test_loader):
     for example_ind, (src_sentence, target) in enumerate(test_loader):
         # TODO: what is the target here, the actual code or a list of action transformed from code?
         decoded_hyp = model.parse(src_sentence)[0]
-        code = ast_to_surface_code(decoded_hyp.tree)
+        code = ast_to_surface_code(decoded_hyp.tree) # TODO: call the actual function
         code_token_list = tokenize_for_bleu_eval(code)
 
         # First argument should be list of list of words from ground truth (in our case only one ground truth)
@@ -237,6 +241,9 @@ if __name__ == '__main__':
     word2num = dict(zip(word_lst, range(0,len(word_lst))))
     act2num = dict(zip(act_lst, range(0,len(act_lst))))
     token2num = dict(zip(token_lst, range(0,len(token_lst))))
+    hyperParams.word_lst = word_lst
+    hyperParams.action_lst = act_lst
+    hyperParams.token_lst = token_lst
 
     # Get dataloaders
     train_loader = P.get_train_loader(train_intent, train_actions, word2num, act2num, token2num)
