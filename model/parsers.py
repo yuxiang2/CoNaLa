@@ -236,7 +236,7 @@ class Decoder(nn.Module):
                 if ind != self.action_index_copy and ind != self.action_index_gen:
                     try:
                         hyp.apply_action(act_lst[ind])
-                        action_embed_tm1 = 
+                        action_embed_tm1 = self.embed([[ind]])
                         found_valid_next_action = True
                         break
                     except:
@@ -250,19 +250,21 @@ class Decoder(nn.Module):
                         _, copy_ind = torch.max(copy_logits)
                         copy_action.token = word_lst[intent[copy_ind]]
                         hyp.apply_action(copy_action)
-                        action_embed_tm1 = 
+                        action_embed_tm1 = self.embed([[ind]])
                         found_valid_next_action = True
                     except:
                         pass
                 else: # genToken
                     try:
+                        gen_action = act_lst[ind]
                         hidden_state = hiddens[2][0][0, :]
                         att_context_gen = att_context[0, :]
                         gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
                         gen_logits = self.linear_gen(gen_hidden_with_att)
                         _, gen_ind = torch.max(gen_logits)
-                        hyp.apply_action(act_lst[ind])
-                        action_embed_tm1 = 
+                        gen_action.token = token_lst[gen_ind]
+                        hyp.apply_action(gen_action)
+                        action_embed_tm1 = self.embed([[ind]])
                         found_valid_next_action = True
                     except:
                         pass
