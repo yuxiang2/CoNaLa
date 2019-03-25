@@ -1,4 +1,3 @@
-# coding=utf-8
 import math
 import os
 
@@ -200,6 +199,58 @@ class Decoder(nn.Module):
         return (logits_action_type.view(batch_size * length, -1), padded_actions.view(-1)), \
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
+    
+    def decode_evaluate(self, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, 
+                        batch_lens, beam_size=1):
+        """
+        TODO: implement dis
+        return: a list of hypotheses, ranked by decreasing score.
+                (In the case of greedy search, returns a list with length 1)
+        """
+        assert beam_size == 1
+        assert len(sentence_encoding) == 1
+
+        ## initialize hidden states
+        hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
+
+        ## for each time step
+        for t in range(length):
+            # previous action embedding
+            if t == 0:
+                ## if no previous action, initialize to zero vector
+                embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
+            else:
+                embed_tm1 = embed[:, t - 1, :]
+
+            # decode one step
+            # att_t (batch, 1, hidden_size)
+            hiddens, att_t = self.decode_step(embed_tm1, hiddens, sentence_encoding, batch_lens)
+
+            # ## do linear inside for loop is inefficient, but it allows teacher forcing
+            # logits_action_type[:, t, :] = self.linear(hiddens[2][0])
+
+            # for perform_copy_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_copy]:
+                # encoding_info = sentence_encoding[:, perform_copy_ind, :]
+                # hidden_state = hiddens[2][0][perform_copy_ind, :]
+                # copy_logits = self.pointer_net(encoding_info, act_lens[perform_copy_ind], hidden_state)
+                # src_token_ind = x[perform_copy_ind, t].src_token_position
+                # assert src_token_ind != -1
+                # logits_copy_list.append(copy_logits)
+                # tgt_copy_list.append(src_token_ind)
+
+            # for perform_gen_ind in [i for i, num in enumerate(padded_x[:, t].tolist()) if num == action_index_gen]:
+                # hidden_state = hiddens[2][0][perform_gen_ind, :]
+                # gen_logits = self.linear_gen(hidden_state)
+                # token_ind = x[perform_gen_ind, t].token
+                # assert token_ind is not None
+                # logits_gen_list.append(gen_logits)
+                # tgt_gen_list.append(token_ind)
+
+        # ## padded eos symbols are not removed, thus
+        # ## calculated accuracy can be too high
+        # return (logits_action_type.view(batch_size * length, -1), padded_x), \
+               # (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
+               # (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
 
 class Model(nn.Module):
@@ -222,6 +273,22 @@ class Model(nn.Module):
         sentence_encoding, batch_lens, hidden = self.encoder(intent)
         return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
                                    self.action_index_gen, batch_lens)
+    
+    def parse(self, src_sentence):
+        """
+        src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
+        return: a list of hypotheses, ranked by decreasing score.
+                (In the case of greedy search, returns a list with length 1)
+        """
+        # can only handle batch size of 1
+        assert len(src_sentence) == 1
+        sentence_encoding, batch_lens, hidden = self.encoder(src_sentence)
+        return self.decode_evaluate(encoder_hidden=hidden, 
+                                    sentence_encoding=sentence_encoding, 
+                                    action_index_copy=self.action_index_copy, 
+                                    action_index_gen=self.action_index_gen, 
+                                    batch_lens=batch_lens,
+                                    beam_size=self.hyperParams.beam_size)
 
     def save(self, path):
         dir_name = os.path.dirname(path)

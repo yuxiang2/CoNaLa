@@ -4,13 +4,14 @@
 """ This script includes the high level training and evaluating routines. """
 
 from __future__ import print_function
-from itertools import chain
-
 from collections import namedtuple
+from itertools import chain
 import json
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 import numpy as np
 import os
 import os.path
+#import pickle
 import sys
 import time
 #import token
@@ -20,29 +21,31 @@ import torch
 #import traceback
 
 
+
 from common.registerable import Registrable
 #from dataset import Dataset, Example
 from dataset import *
 #import dataset.bleu_score as bleu_score
 #from dataset.evaluator import ConalaEvaluator
-#from dataset.util import tokenize_for_bleu_eval
+from dataset.util import tokenize_for_bleu_eval
 #from model import nn_utils, utils
 from model.parsers import Model
 #from model.utils import GloveHelper, get_parser_class
 import preprocess_temp as P
 
 
+
 hyperParamMap = {
     #### General configuration ####
-    'cuda': True,      # Use gpu
-    'asdl_file': '',   # Path to ASDL grammar specification
-    'mode': 'train',   # train or test
+    'cuda': torch.cuda.is_available(),  # Use gpu
+    'asdl_file': '',                    # Path to ASDL grammar specification
+    'mode': 'train',                    # train or test
 
     #### Modularized configuration ####
-    'parser': 'default_parser',  # which parser model to use
+    'parser': 'tranX',  # which parser model to use
 
     #### Model configuration ####
-    'lstm': 'lstm',    # Type of LSTM used, currently only standard LSTM cell is supported
+    'lstm': 'lstm',     # Type of LSTM used, currently only standard LSTM cell is supported
 
     #### Embedding sizes ####
     'embed_size': 128,         # Size of word embeddings
@@ -97,7 +100,7 @@ hyperParamMap = {
     'lr_decay_after_epoch': 0,            # Decay learning rate after x epoch
     'decay_lr_every_epoch': False,        # force to decay learning rate after each epoch
     'reset_optimizer': False,             # Whether to reset optimizer when loading the best checkpoint
-    'verbose': False,                     # Verbose mode
+    'verbose': True,                      # Verbose mode
 
     #### decoding/validation/testing ####
     'load_model': None,                   # Load a pre-trained model
@@ -108,11 +111,11 @@ hyperParamMap = {
     'save_decode_to': None,               # Save decoding results to file
 }
 
-HyperParams = namedtuple('HyperParams', list(hyperParamMap.keys()), verbose=True)
+HyperParams = namedtuple('HyperParams', list(hyperParamMap.keys()), verbose=False)
 hyperParams = HyperParams(**hyperParamMap)
 
 
-def train(model, train_dataloader, dev_dataloader, params):
+def train(model, train_loader, dev_loader, params):
     model.train()
     if params.cuda: 
         model.cuda()
@@ -178,14 +181,43 @@ def train(model, train_dataloader, dev_dataloader, params):
             # print('reached max epoch, stop!', file=sys.stderr)
             # exit(0)
 
+
+def test(model, params, test_loader):
+    model.eval()
+    decode_results = []
+    for example_ind, (src_sentence, target) in enumerate(test_loader):
+        # TODO: what is the target here, the actual code or a list of action transformed from code?
+        decoded_hyp = model.parse(src_sentence)[0]
+        code = ast_to_surface_code(decoded_hyp.tree)
+        code_token_list = tokenize_for_bleu_eval(code)
+
+        # First argument should be list of list of words from ground truth (in our case only one ground truth)
+        # Second argument should be our prediction, and it's a list of word
+        bleu = sentence_bleu([target],
+                             code_token_list,
+                             smoothing_function=SmoothingFunction().method3)
+
+        print("Intent:       {}".format(src_sentence))
+        print("Ground Truth: {}".format(target))
+        print("Predicted:    {}".format(code))
+        print("BLEU score:   {}\n".format(bleu))
+        decode_results.append((src_sentence, target, code, bleu))
+        
+    # if params.save_decode_to:
+    #     pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
+    return decode_results
+    
+
+
+
+
 if __name__ == '__main__':
+    # load train and test dataset
     directory = './conala-corpus/'
     train_file = directory + 'train.json'
     test_file = directory + 'test.json'
-
     with open(train_file) as f:
         train_data = json.load(f)
-        
     with open(test_file) as f:
         test_data = json.load(f)
 
@@ -195,233 +227,34 @@ if __name__ == '__main__':
 
     # this class is used for code2actions and actions2code
     ast_action = P.Ast_Action()
-
     train_actions = []
     for code in train_codes:
         train_actions.append(ast_action.code2actions(code))
 
+    # word list, action list and token list.
     word_lst = P.vocab_list(train_intent, cut_freq=2)
     act_lst, token_lst = P.action_list(train_actions, cut_freq=5)
-
     word2num = dict(zip(word_lst, range(0,len(word_lst))))
     act2num = dict(zip(act_lst, range(0,len(act_lst))))
     token2num = dict(zip(token_lst, range(0,len(token_lst))))
 
+    # Get dataloaders
     train_loader = P.get_train_loader(train_intent, train_actions, word2num, act2num, token2num)
     test_loader = P.get_test_loader(test_intent, word2num)
-    
     action_index_copy = act2num[P.GenTokenAction('copy')]
     action_index_gen = act2num[P.GenTokenAction('token')]
 
+    # TODO: fix this so that we have more control over training, testing and where the model comes from (trained or loaded)
     if hyperParams.mode == 'train':
-        # TODO: figure out the index of copy and genToken in action list
-        model = Model(hyperParams, action_size=len(act_lst), token_size=len(token_lst), word_size=len(word_lst), 
-                      action_index_copy, action_index_gen, encoder_lstm_layers=3)
-        train(model, train_loader, dev_loader, params)
-    # elif hyperParams.mode == 'test':
-    #     test(hyperParams)
+        model = Model(hyperParams=hyperParams, action_size=len(act_lst), token_size=len(token_lst), 
+                      word_size=len(word_lst), action_index_copy=action_index_copy, action_index_copy=action_index_gen, 
+                      encoder_lstm_layers=3)
+        train(model=model, train_loader=train_loader, dev_loader=None, params=hyperParams)
+    elif hyperParams.mode == 'test':
+        assert hyperParams.load_model
+        print('load model from [%s]' % params.load_model, file=sys.stderr)
+        model = Model.load(hyperParams=hyperParams, action_size=len(act_lst), token_size=len(token_lst), 
+                           word_size=len(word_lst), encoder_lstm_layers=3):
+        test(model=model, params=hyperParams, test_loader=test_loader)
     else:
         raise RuntimeError('unknown mode')
-
-
-
-# def decode(examples, model, beam_size=1, verbose=False, **kwargs):
-#     if verbose:
-#         print('evaluating %d examples' % len(examples))
-#     was_training = model.training
-#     model.eval()
-
-#     decode_results = []
-#     count = 0
-#     for example in tqdm(examples, desc='Decoding', file=sys.stdout, total=len(examples)):
-#         hyps = model.parse(example.src_sent, context=None, beam_size=beam_size)
-#         decoded_hyps = []
-#         for hyp_id, hyp in enumerate(hyps):
-#             got_code = False
-#             try:
-#                 hyp.code = model.transition_system.ast_to_surface_code(hyp.tree)
-#                 got_code = True
-#                 decoded_hyps.append(hyp)
-#             except:
-#                 if verbose:
-#                     print("Exception in converting tree to code:", file=sys.stdout)
-#                     print('-' * 60, file=sys.stdout)
-#                     print('Example: %s\nIntent: %s\nTarget Code:\n%s\nHypothesis[%d]:\n%s' % (example.idx,
-#                                                                                              ' '.join(example.src_sent),
-#                                                                                              example.tgt_code,
-#                                                                                              hyp_id,
-#                                                                                              hyp.tree.to_string()), file=sys.stdout)
-#                     if got_code:
-#                         print()
-#                         print(hyp.code)
-#                     traceback.print_exc(file=sys.stdout)
-#                     print('-' * 60, file=sys.stdout)
-
-#         count += 1
-#         decode_results.append(decoded_hyps)
-
-#     if was_training: model.train()
-#     return decode_results
-
-# def evaluate(examples, parser, evaluator, beam_size=1, verbose=False, return_decode_result=False, eval_top_pred_only=False):
-#     decode_results = decode(examples, parser, beam_size=beam_size, verbose=verbose)
-#     eval_result = evaluator.evaluate_dataset(examples, decode_results, fast_mode=eval_top_pred_only)
-#     if return_decode_result:
-#         return eval_result, decode_results
-#     else:
-#         return eval_result
-
-
-
-# def test(params):
-#     test_set = Dataset.from_bin_file(params.test_file)
-#     assert params.load_model
-
-#     print('load model from [%s]' % params.load_model, file=sys.stderr)
-#     loaded_params = torch.load(params.load_model, map_location=lambda storage, loc: storage)
-#     transition_system = loaded_params['transition_system']
-#     saved_args = loaded_params['args']
-#     saved_args.cuda = params.cuda
-#     # set the correct domain from saved arg
-
-#     parser_cls = Registrable.by_name(params.parser)
-#     parser = parser_cls.load(model_path=params.load_model, cuda=params.cuda)
-#     parser.eval()
-#     evaluator = ConalaEvaluator(transition_system, args=params)
-#     eval_results, decode_results = evaluate(test_set.examples, parser, evaluator, params,
-#                                             verbose=params.verbose, return_decode_result=True)
-#     print(eval_results, file=sys.stderr)
-#     if params.save_decode_to:
-#         pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # ============================= Start of Helper Functions ===============================
-
-# """ Parses a file in the natural .jsonl format that the Conala corpus comes in.
-#     @param f: .jsonl file containing snippets
-#     @return: list of lists of tokens
-# """
-# def parse_file_json(f):
-#     snippet_list = json.load(f)
-#     result = []
-#     for snippet in snippet_list:
-#         toks = tokenize_for_bleu_eval(snippet['snippet'])
-#         result.append(toks)
-#     return result
-
-# """ This runs the built-in Python tokenizer. Note that it only works on correctly parseable Python programs.
-#     @param string: string containing a Python tokenizable code snippet
-#     @return: list of code tokens
-# """
-# def tokenize_code(string, concat_symbol=None):
-#     tokens = []
-#     string = string.strip().decode('utf-8').encode('ascii', 'strict') #.decode('string_escape')
-#     for toknum, tokval, _, _, _  in tokenize.generate_tokens(StringIO(string).readline):
-#         # We ignore these tokens during evaluation.
-#         if toknum not in [token.ENDMARKER, token.INDENT, token.DEDENT]:
-#             tokens.append(tokval.lower())
-
-#     return tokens
-
-# """ This builds the reference list for BLEU scoring
-#     @param reference_file_name: The reference file can be downloaded from https://conala-corpus.github.io/ as
-#                                 conala_annotations.v1.0.zip/examples.annotated.test.json
-#     @return: list of references ready for BLEU scoring
-# """
-# def get_reference_list(reference_file_name):
-#     f_reference = open(reference_file_name)
-#     a = parse_file_json(f_reference)
-#     a = [[l] for l in a]
-#     return a
-
-# """ This scores hypotheses against references using BLEU.
-#     @param reference_list: reference list returned by get_reference_list.
-#     @param hypothesis_list: list of lists of tokens that a model generates.
-#     @return: 3-Tuple with the BLEU score, n-gram precisions, geometric mean of n-gram
-#              precisions and brevity penalty.
-# """
-# def evaluate_bleu(reference_list, hypothesis_list):
-#     b = [tokenize_for_bleu_eval(s) for s in hypothesis_list]
-#     return bleu_score.compute_bleu(reference_list, b, smooth=False)
-
-
-# # ============================= End of Helper Functions ===============================
-
-
-
-# def main():
-#     p = argparse.ArgumentParser(description="Evaluator for CoNaLa",
-#         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-#     p.add_argument("--input_dir",
-#                    help="input directory, containing 'res/answer.txt' and 'ref/truth.txt'",
-#                    default=None)
-#     p.add_argument("--input_ref",
-#                    help="input reference file",
-#                    default=None)
-#     p.add_argument("--input_hyp",
-#                    help="input hypothesis file",
-#                    default=None)
-#     p.add_argument("--output_file",
-#                    help="output score file",
-#                    default=None)
-#     p.add_argument("--output_dir",
-#                    help="output score directory which will contain output_dir/scores.txt",
-#                    default=None)
-#     p.add_argument("--no_exact_match",
-#                    help="only output bleu scores and not exact_match score",
-#                    action="store_true")
-#     p.add_argument("--strip_ref_metadata",
-#                    help="strip metadata from the reference and get only the code",
-#                    action="store_true")
-
-#     args = p.parse_args()
-
-#     if not (args.input_dir or (args.input_ref and args.input_hyp)):
-#         raise ValueError("Must specify input_dir or input_ref+input_hyp")
-
-#     input_hyp = args.input_hyp if args.input_hyp else os.path.join(args.input_dir, 'res', 'answer.txt')
-#     input_ref = args.input_ref if args.input_ref else os.path.join(args.input_dir, 'ref', 'truth.txt')
-
-#     with open(input_hyp, 'r') as f_hyp:
-#         c_hyp = json.load(f_hyp)
-#         c_hyp = [tokenize_for_bleu_eval(s) for s in c_hyp]
-#     with open(input_ref, 'r') as f_ref:
-#         c_ref = json.load(f_ref)
-#         if args.strip_ref_metadata:
-#           c_ref = [x['snippet'] for x in c_ref]
-#         c_ref = [tokenize_for_bleu_eval(s) for s in c_ref]
-
-#     if len(c_hyp) != len(c_ref):
-#         raise ValueError('Length of hypothesis and reference don\'t match: {} != {}'.format(len(c_hyp), len(c_ref)))
-
-#     if args.output_file:
-#         f_out = open(args.output_file, 'w')
-#     elif args.output_dir:
-#         f_out = open(os.path.join(args.output_dir, 'scores.txt'), 'w')
-#     else:
-#         f_out = sys.stdout
-
-#     bleu_tup = bleu_score.compute_bleu([[x] for x in c_ref], c_hyp, smooth=False)
-#     bleu = bleu_tup[0]
-#     exact = sum([1 if h == r else 0 for h, r in zip(c_hyp, c_ref)])/len(c_hyp)
-
-#     f_out.write('bleu:{0:.2f}\n'.format(bleu * 100))
-#     if not args.no_exact_match:
-#         f_out.write('exact:{0:.2f}\n'.format(exact * 100))
-
-#     f_out.close()
-
-# if __name__ == '__main__':
-#     main()
