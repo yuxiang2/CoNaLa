@@ -26,15 +26,25 @@ def process_code(code):
     return code
     
 # returns have two fileds: 'intent' and 'code'
-def process_data(data):
+def process_data(data, mine=False):
     intents = []
     codes = []
-    for e in data:
-        if (e['rewritten_intent'] != None):
-            intents.append(process_intent(e['rewritten_intent']))
-        else:
+    
+    if mine == False:
+        for e in data:
+            if (e['rewritten_intent'] != None):
+                intents.append(process_intent(e['rewritten_intent']))
+            else:
+                intents.append(process_intent(e['intent']))
+            codes.append(process_code(e['snippet']))
+            
+    else:
+        for e in data:
+            if e['prob'] < 0.5:
+                break
             intents.append(process_intent(e['intent']))
-        codes.append(process_code(e['snippet']))
+            codes.append(process_code(e['snippet']))
+            
     return intents, codes
     
 # return English vocabularies occur more than cut_freq times
