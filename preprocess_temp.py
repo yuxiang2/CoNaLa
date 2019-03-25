@@ -16,13 +16,12 @@ import astor
 from dataset.action_info import *
 
 # should return a list of words
-## Incomplete
+## TODO improve this
 def process_intent(intent):
-    intent = intent.lower()
     return intent.replace('?','').split()
    
 # should return a list of characaters   
-## Incomplete
+## TODO improve this
 def process_code(code):
     return code
     
@@ -31,13 +30,15 @@ def process_data(data):
     intents = []
     codes = []
     for e in data:
-        intents.append(process_intent(e['intent']))
+        if (e['rewritten_intent'] != None):
+            intents.append(process_intent(e['rewritten_intent']))
+        else:
+            intents.append(process_intent(e['intent']))
         codes.append(process_code(e['snippet']))
     return intents, codes
     
-# return English vocabularies occur more than 5 times
-## need to modify
-def vocab_list(sentences, sos_eos=False, cut_freq=0):
+# return English vocabularies occur more than cut_freq times
+def vocab_list(sentences, sos_eos=False, cut_freq=3):
     vocab = Counter()
     for sentence in sentences:
         for word in sentence:
@@ -53,7 +54,8 @@ def vocab_list(sentences, sos_eos=False, cut_freq=0):
 
     return vocab
     
-def action_list(actions_lst, cut_freq=0):
+# return all possible actions, and tokens
+def action_list(actions_lst, cut_freq=3):
     act_table = set()
     token_lst = Counter()
     for actions in actions_lst:
@@ -127,15 +129,8 @@ class code_intent_pair(Dataset):
             self.intents.append(num_intent)
     
         self.action_infos_list = []
-        i = 0
         for intent,actions in zip(intents,actions_lst):
-            try:
-                act_info = get_action_infos(intent, actions, code2num, token2num)
-            except:
-                print(actions)
-                print(i)
-                raise ValueError
-            i += 1
+            act_info = get_action_infos(intent, actions, code2num, token2num)
             self.action_infos_list.append(act_info)
         
     def __len__(self): 
@@ -163,6 +158,7 @@ class intent_set(Dataset):
     def __getitem__(self, idx):
         return self.num_intents[idx], self.intents[idx]
         
+# sort the data by length, so we can do packed sequence learning
 def collate_lines(seq_list):
     inputs, targets = zip(*seq_list)
     lens = [len(seq) for seq in inputs]
