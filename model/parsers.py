@@ -208,9 +208,12 @@ class Decoder(nn.Module):
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
 
-    def decode_evaluate(self, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, beam_size=1):
+    def decode_evaluate(self, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, 
+                        batch_lens, beam_size=1):
         """
-        return: a list of hypotheses, sorted by decreasing score
+        TODO: implement dis
+        return: a list of hypotheses, ranked by decreasing score.
+                (In the case of greedy search, returns a list with length 1)
         """
         assert beam_size == 1
         assert len(sentence_encoding) == 1
@@ -263,33 +266,44 @@ class Model(nn.Module):
                  encoder_lstm_layers=3):
         super(Model, self).__init__()
         self.hyperParams = hyperParams
-        self.encoder = Encoder(hyperParams.embed_size, word_size, hyperParams.hidden_size,
+        self.encoder = Encoder(embed_size=hyperParams.embed_size, 
+                               word_size=word_size, 
+                               hidden_size=hyperParams.hidden_size,
                                lstm_layers=encoder_lstm_layers)
-        self.decoder = Decoder(hyperParams.action_embed_size,
-                               hyperParams.att_vec_size,
-                               hyperParams.hidden_size * 2,
-                               hyperParams.hidden_size,
-                               action_size,
-                               token_size)
+        self.decoder = Decoder(action_embed_size=hyperParams.action_embed_size,
+                               attn_size=hyperParams.att_vec_size,
+                               encoder_hidden_size=hyperParams.hidden_size * 2,
+                               hidden_size=hyperParams.hidden_size,
+                               action_size=action_size,
+                               token_size=token_size)
         self.action_index_copy = action_index_copy
         self.action_index_gen = action_index_gen
 
     def forward(self, x):
-        intent, batch_act_infos = x
-        sentence_encoding, batch_lens, hidden = self.encoder(intent)
-        return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
-                                   self.action_index_gen, batch_lens)
+        batch_intent, batch_act_infos = x
+        sentence_encoding, batch_lens, hidden = self.encoder(batch_intent)
+        return self.decoder.decode(batch_act_infos=batch_act_infos, 
+                                   encoder_hidden=hidden, 
+                                   sentence_encoding=sentence_encoding, 
+                                   action_index_copy=self.action_index_copy,
+                                   action_index_gen=self.action_index_gen, 
+                                   batch_lens=batch_lens)
 
-
-    def parse(self, x):
-        # no ground truth from eval data loader
-        src_sentence, _ = x
+    def parse(self, src_sentence):
+        """
+        src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
+        return: a list of hypotheses, ranked by decreasing score.
+                (In the case of greedy search, returns a list with length 1)
+        """
         # can only handle batch size of 1
         assert len(src_sentence) == 1
         sentence_encoding, batch_lens, hidden = self.encoder(src_sentence)
-        return decode_evaluate(encoder_hidden=hidden, sentence_encoding=sentence_encoding, 
-                               action_index_copy=self.action_index_copy, action_index_gen=self.action_index_gen, 
-                               beam_size=self.hyperParams.beam_size)
+        return self.decode_evaluate(encoder_hidden=hidden, 
+                                    sentence_encoding=sentence_encoding, 
+                                    action_index_copy=self.action_index_copy, 
+                                    action_index_gen=self.action_index_gen, 
+                                    batch_lens=batch_lens,
+                                    beam_size=self.hyperParams.beam_size)
         
     def save(self, path):
         dir_name = os.path.dirname(path)
