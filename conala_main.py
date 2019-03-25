@@ -34,15 +34,15 @@ import preprocess_temp as P
 
 hyperParamMap = {
     #### General configuration ####
-    'cuda': True,      # Use gpu
-    'asdl_file': '',   # Path to ASDL grammar specification
-    'mode': 'train',   # train or test
+    'cuda': torch.cuda.is_available(),  # Use gpu
+    'asdl_file': '',                    # Path to ASDL grammar specification
+    'mode': 'train',                    # train or test
 
     #### Modularized configuration ####
-    'parser': 'default_parser',  # which parser model to use
+    'parser': 'tranX',  # which parser model to use
 
     #### Model configuration ####
-    'lstm': 'lstm',    # Type of LSTM used, currently only standard LSTM cell is supported
+    'lstm': 'lstm',     # Type of LSTM used, currently only standard LSTM cell is supported
 
     #### Embedding sizes ####
     'embed_size': 128,         # Size of word embeddings
@@ -112,7 +112,7 @@ HyperParams = namedtuple('HyperParams', list(hyperParamMap.keys()), verbose=True
 hyperParams = HyperParams(**hyperParamMap)
 
 
-def train(model, train_dataloader, dev_dataloader, params):
+def train(model, train_loader, dev_loader, params):
     model.train()
     if params.cuda: 
         model.cuda()
@@ -178,6 +178,80 @@ def train(model, train_dataloader, dev_dataloader, params):
             # print('reached max epoch, stop!', file=sys.stderr)
             # exit(0)
 
+def decode(examples, model, beam_size=1, verbose=False, **kwargs):
+    if verbose:
+        print('evaluating %d examples' % len(examples))
+
+    model.eval()
+    decode_results = []
+    count = 0
+    for example in tqdm(examples, desc='Decoding', file=sys.stdout, total=len(examples)):
+        hyps = model.parse(example.src_sent, context=None)
+        decoded_hyps = []
+        for hyp_id, hyp in enumerate(hyps):
+            got_code = False
+            try:
+                hyp.code = model.transition_system.ast_to_surface_code(hyp.tree)
+                got_code = True
+                decoded_hyps.append(hyp)
+            except:
+                if verbose:
+                    print("Exception in converting tree to code:", file=sys.stdout)
+                    print('-' * 60, file=sys.stdout)
+                    print('Example: %s\nIntent: %s\nTarget Code:\n%s\nHypothesis[%d]:\n%s' % (example.idx,
+                                                                                             ' '.join(example.src_sent),
+                                                                                             example.tgt_code,
+                                                                                             hyp_id,
+                                                                                             hyp.tree.to_string()), file=sys.stdout)
+                    if got_code:
+                        print()
+                        print(hyp.code)
+                    traceback.print_exc(file=sys.stdout)
+                    print('-' * 60, file=sys.stdout)
+        count += 1
+        decode_results.append(decoded_hyps)
+    return decode_results
+
+def evaluate(examples, model, evaluator, beam_size=1, verbose=False, eval_top_pred_only=False):
+    decode_results = decode(examples, parser, beam_size=beam_size, verbose=verbose)
+    eval_result = evaluator.evaluate_dataset(examples, decode_results, fast_mode=eval_top_pred_only)
+    return eval_result, decode_results
+
+def test(model, params, test_loader):
+    model.eval()
+    decode_results = []
+    for example_ind, example in enumerate(test_loader):
+        hypotheses = model.parse(example)
+        decoded_hyps = []
+        for hyp_id, hyp in enumerate(hyps):
+            got_code = False
+            try:
+                hyp.code = model.transition_system.ast_to_surface_code(hyp.tree)
+                got_code = True
+                decoded_hyps.append(hyp)
+            except:
+                if verbose:
+                    print("Exception in converting tree to code:", file=sys.stdout)
+                    print('-' * 60, file=sys.stdout)
+                    print('Example: %s\nIntent: %s\nTarget Code:\n%s\nHypothesis[%d]:\n%s' % (example.idx,
+                                                                                             ' '.join(example.src_sent),
+                                                                                             example.tgt_code,
+                                                                                             hyp_id,
+                                                                                             hyp.tree.to_string()), file=sys.stdout)
+                    if got_code:
+                        print()
+                        print(hyp.code)
+                    traceback.print_exc(file=sys.stdout)
+                    print('-' * 60, file=sys.stdout)
+        count += 1
+        decode_results.append(decoded_hyps)
+
+    eval_results, decode_results = evaluate(test_set.examples, parser, evaluator, params,
+                                            verbose=params.verbose)
+    print(eval_results, file=sys.stderr)
+    if params.save_decode_to:
+        pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
+
 if __name__ == '__main__':
     directory = './conala-corpus/'
     train_file = directory + 'train.json'
@@ -215,84 +289,21 @@ if __name__ == '__main__':
 
     if hyperParams.mode == 'train':
         # TODO: figure out the index of copy and genToken in action list
-        model = Model(hyperParams, action_size=len(act_lst), token_size=len(token_lst), word_size=len(word_lst), 
-                      action_index_copy, action_index_gen, encoder_lstm_layers=3)
-        train(model, train_loader, dev_loader, params)
-    # elif hyperParams.mode == 'test':
-    #     test(hyperParams)
+        model = Model(hyperParams=hyperParams, action_size=len(act_lst), token_size=len(token_lst), 
+                      word_size=len(word_lst), action_index_copy=action_index_copy, action_index_copy=action_index_gen, 
+                      encoder_lstm_layers=3)
+        train(model=model, train_loader=train_loader, dev_loader=None, params=hyperParams)
+    elif hyperParams.mode == 'test':
+        assert hyperParams.load_model
+        print('load model from [%s]' % params.load_model, file=sys.stderr)
+        model = Model.load(hyperParams=hyperParams, action_size=len(act_lst), token_size=len(token_lst), 
+                           word_size=len(word_lst), encoder_lstm_layers=3):
+        test(model=model, params=hyperParams, test_loader=test_loader)
     else:
         raise RuntimeError('unknown mode')
 
 
 
-# def decode(examples, model, beam_size=1, verbose=False, **kwargs):
-#     if verbose:
-#         print('evaluating %d examples' % len(examples))
-#     was_training = model.training
-#     model.eval()
-
-#     decode_results = []
-#     count = 0
-#     for example in tqdm(examples, desc='Decoding', file=sys.stdout, total=len(examples)):
-#         hyps = model.parse(example.src_sent, context=None, beam_size=beam_size)
-#         decoded_hyps = []
-#         for hyp_id, hyp in enumerate(hyps):
-#             got_code = False
-#             try:
-#                 hyp.code = model.transition_system.ast_to_surface_code(hyp.tree)
-#                 got_code = True
-#                 decoded_hyps.append(hyp)
-#             except:
-#                 if verbose:
-#                     print("Exception in converting tree to code:", file=sys.stdout)
-#                     print('-' * 60, file=sys.stdout)
-#                     print('Example: %s\nIntent: %s\nTarget Code:\n%s\nHypothesis[%d]:\n%s' % (example.idx,
-#                                                                                              ' '.join(example.src_sent),
-#                                                                                              example.tgt_code,
-#                                                                                              hyp_id,
-#                                                                                              hyp.tree.to_string()), file=sys.stdout)
-#                     if got_code:
-#                         print()
-#                         print(hyp.code)
-#                     traceback.print_exc(file=sys.stdout)
-#                     print('-' * 60, file=sys.stdout)
-
-#         count += 1
-#         decode_results.append(decoded_hyps)
-
-#     if was_training: model.train()
-#     return decode_results
-
-# def evaluate(examples, parser, evaluator, beam_size=1, verbose=False, return_decode_result=False, eval_top_pred_only=False):
-#     decode_results = decode(examples, parser, beam_size=beam_size, verbose=verbose)
-#     eval_result = evaluator.evaluate_dataset(examples, decode_results, fast_mode=eval_top_pred_only)
-#     if return_decode_result:
-#         return eval_result, decode_results
-#     else:
-#         return eval_result
-
-
-
-# def test(params):
-#     test_set = Dataset.from_bin_file(params.test_file)
-#     assert params.load_model
-
-#     print('load model from [%s]' % params.load_model, file=sys.stderr)
-#     loaded_params = torch.load(params.load_model, map_location=lambda storage, loc: storage)
-#     transition_system = loaded_params['transition_system']
-#     saved_args = loaded_params['args']
-#     saved_args.cuda = params.cuda
-#     # set the correct domain from saved arg
-
-#     parser_cls = Registrable.by_name(params.parser)
-#     parser = parser_cls.load(model_path=params.load_model, cuda=params.cuda)
-#     parser.eval()
-#     evaluator = ConalaEvaluator(transition_system, args=params)
-#     eval_results, decode_results = evaluate(test_set.examples, parser, evaluator, params,
-#                                             verbose=params.verbose, return_decode_result=True)
-#     print(eval_results, file=sys.stderr)
-#     if params.save_decode_to:
-#         pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
 
 
 

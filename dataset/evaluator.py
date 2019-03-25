@@ -1,9 +1,8 @@
 # Common
 from __future__ import print_function
 
-import sys, traceback
 import numpy as np
-from common.registerable import Registrable
+import sys, traceback
 
 # CoNaLa
 from .bleu_score import compute_bleu
@@ -11,11 +10,11 @@ from .dataset import Dataset
 from .util import decanonicalize_code, tokenize_for_bleu_eval
 import ast
 import astor
+from common.registerable import Registrable
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 
 
-# Common
 @Registrable.register('default_evaluator')
 class Evaluator(object):
     def __init__(self, transition_system=None, args=None):
@@ -64,7 +63,6 @@ class Evaluator(object):
         return eval_results
 
 
-# CoLaNa
 @Registrable.register('conala_evaluator')
 class ConalaEvaluator(Evaluator):
     def __init__(self, transition_system=None, args=None):
