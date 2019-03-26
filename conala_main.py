@@ -108,6 +108,7 @@ hyperParamMap = {
     #### decoding/validation/testing ####
     'load_model': None,                   # Load a pre-trained model
     'beam_size': 5,                       # Beam size for beam search
+    'random_size': 50,                    # Random size for random search
     'decode_max_time_step': 100,          # Maximum number of time steps used in decoding and sampling
     'sample_size': 5,                     # Sample size
     'test_file': '',                      # Path to the test file
@@ -119,93 +120,60 @@ hyperParams = HyperParams(**hyperParamMap)
 
 
 
-def train(model, train_loader, dev_loader, params):
-    model.train()
-    if params.cuda: 
-        model.cuda()
+for e in range(20):
+    epoch_begin = time.time()
+    for batch_ind, x in enumerate(train_loader):
+        optimizer.zero_grad()
 
-    optimizer_cls = eval('torch.optim.%s' % params.optimizer)  # FIXME: this is evil!
-    optimizer = optimizer_cls(model.parameters(), lr=params.lr)
+        (action_logits, action_labels), (copy_logits, copy_labels), (token_logits, token_labels) = model(x)
 
-    lossFunc = nn.CrossEntropyLoss()
+        loss1 = lossFunc(action_logits, action_labels)
+        loss2 = torch.DoubleTensor([0.0])
+        if len(copy_logits) > 0:
+            loss2 = lossFunc(copy_logits, copy_labels)
+        loss3 = torch.DoubleTensor([0.0])
+        if len(token_logits) > 0:
+            loss3 = lossFunc(token_logits, token_labels)
 
-    # print('use glorot initialization', file=sys.stderr)
-    # nn_utils.glorot_init(model.parameters())
+        total_loss = loss1 + loss2.double() + loss3.double()
+        total_loss.backward()
 
-    epoch = 0
-    report_loss = report_examples = 0.
-    while True:
-        epoch += 1
-        epoch_begin = time.time()
+        # clip gradient
+        if hyperParams.clip_grad > 0.:
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hyperParams.clip_grad)
 
-        for batch_ind, x in enumerate(train_dataloader):
-            optimizer.zero_grad()
+        optimizer.step()
 
-            (action_logits, action_labels), (copy_logits, copy_labels), (token_logits, token_labels) = model(x)
-            loss1 = lossFunc(action_logits, action_labels)
-            loss2 = 0.0
-            if len(copy_logits) > 0:
-                loss2 = lossFunc(copy_logits, copy_labels)
-            loss3 = 0.0
-            if len(token_logits) > 0:
-                loss3 = lossFunc(token_logits, token_labels)
+        if batch_ind % hyperParams.log_every == hyperParams.log_every - 1:
+            print("Action loss: {}".format(loss1.data))
+            print("Copy loss: {}".format(loss2.data))
+            print("Token loss: {}".format(loss3.data))
+            print('-------------------------------------------------------')
+            report_loss = report_examples = 0.
 
-            total_loss.backward()
-
-            # clip gradient
-            if params.clip_grad > 0.:
-                grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), params.clip_grad)
-
-            optimizer.step()
-
-            if train_iter % params.log_every == 0:
-                total_loss = loss1 + loss2 + loss3
-                print("Action loss: {}".format(loss1.data))
-                print("Copy loss: {}".format(loss2.data))
-                print("Token loss: {}".format(loss3.data))
-                print("GenToken total loss: {}".format(loss2.data + loss3.data))
-                report_loss = report_examples = 0.
-
-        print('[Epoch %d] epoch elapsed %ds' % (epoch, time.time() - epoch_begin))
-
-        # if params.save_all_models:
-        #     model_file = params.save_to + '.iter%d.bin' % train_iter
-        #     print('save model to [%s]' % model_file, file=sys.stderr)
-        #     model.save(model_file)
-
-        # if params.decay_lr_every_epoch and epoch > params.lr_decay_after_epoch:
-            # lr = optimizer.param_groups[0]['lr'] * params.lr_decay
-            # print('decay learning rate to %f' % lr, file=sys.stderr)
-
-            # # set new lr
-            # for param_group in optimizer.param_groups:
-                # param_group['lr'] = lr
-
-        # if epoch == params.max_epoch:
-            # print('reached max epoch, stop!', file=sys.stderr)
-            # exit(0)
+    print('epoch elapsed %ds' % (time.time() - epoch_begin))
 
 
-def test(model, params, test_loader):
+def test(model, params, ast_action, test_loader, target_lst):
     model.eval()
     decode_results = []
-    for example_ind, (src_sentence, target) in enumerate(test_loader):
-        # TODO: what is the target here, the actual code or a list of action transformed from code?
-        decoded_hyp = model.parse(src_sentence)[0]
-        code = ast_to_surface_code(decoded_hyp.tree) # TODO: call the actual function
+    for example_ind, (src_sentence, _) in enumerate(test_loader):
+        decoded_hyp = model.parse(src_sentence)
+        code = ast_action.actions2code(decoded_hyp.actions)
         code_token_list = tokenize_for_bleu_eval(code)
+        target_token_list = tokenize_for_bleu_eval(target_lst[example_ind])
 
         # First argument should be list of list of words from ground truth (in our case only one ground truth)
         # Second argument should be our prediction, and it's a list of word
-        bleu = sentence_bleu([target],
+        bleu = sentence_bleu([target_token_list],
                              code_token_list,
                              smoothing_function=SmoothingFunction().method3)
 
         print("Intent:       {}".format(src_sentence))
-        print("Ground Truth: {}".format(target))
+        print("Ground Truth: {}".format(target_lst[example_ind]))
         print("Predicted:    {}".format(code))
         print("BLEU score:   {}\n".format(bleu))
-        decode_results.append((src_sentence, target, code, bleu))
+        decode_results.append((src_sentence, target_lst[example_ind], code, bleu))
         
     # if params.save_decode_to:
     #     pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
@@ -255,7 +223,7 @@ if __name__ == '__main__':
     if hyperParams.mode == 'train':
         model = Model(hyperParams=hyperParams, action_size=len(act_lst), token_size=len(token_lst), 
                       word_size=len(word_lst), action_index_copy=action_index_copy, action_index_copy=action_index_gen, 
-                      encoder_lstm_layers=3)
+                      encoder_lstm_layers=3, unknown_token_index=token2num['<UNK>'])
         train(model=model, train_loader=train_loader, dev_loader=None, params=hyperParams)
     elif hyperParams.mode == 'test':
         assert hyperParams.load_model
