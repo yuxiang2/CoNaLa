@@ -1,13 +1,14 @@
 import math
 import os
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils as U
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 import model.pointer_net as Pointer_Net
-from asdl.hypothesis import Hypotheses
+from asdl.hypothesis import Hypothesis
+from asdl.lang.py3.py3_transition_system import *
 
 class Encoder(nn.Module):
     def __init__(self, embed_size, word_size, hidden_size, lstm_layers=3):
@@ -130,7 +131,7 @@ class Decoder(nn.Module):
 
         # calculate context vector
         att_context = torch.bmm(attn_weights.unsqueeze(1),
-                                encoder_outputs).squeeze()
+                                encoder_outputs).squeeze(1)
 
         return ((h_t0, cell_t0), (h_t1, cell_t1), (h_t2, cell_t2)), att_context
 
@@ -201,11 +202,10 @@ class Decoder(nn.Module):
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
     
-    def decode_evaluate(self, intent, encoder_hidden, sentence_encoding, action_index_copy, action_index_gen, 
-                        word_lst, act_lst, token_lst,
-                        batch_lens, beam_size=1):
+    def decode_evaluate(self, intent, intent_text, encoder_hidden, sentence_encoding, action_index_copy, 
+                        action_index_gen, act_lst, token_lst,
+                        batch_lens, ast_action, beam_size=1):
         """
-        TODO: implement dis
         return: a list of hypotheses, ranked by decreasing score.
                 (In the case of greedy search, returns a list with length 1)
         """
@@ -215,62 +215,68 @@ class Decoder(nn.Module):
         ## initialize hidden states
         batch_size = 1
         hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
-        action_tm1 = 
         action_embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
+        
+        ## initialize context vector
+        att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
         ## for each time step
-        hyp = Hypotheses()
+        hyp = Hypothesis()
         while not hyp.completed:
             # decode one step
-            # att_t (batch, 1, hidden_size)
             hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding, 
                                                     batch_lens, att_context)
 
             # classify action types
             hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
-            logits_action_type = self.linear(hiddens_with_attention)
-            _, inds = torch.sort(logits_action_type, descending=True)
+            logits_action_type = self.linear(hiddens_with_attention).view(-1).numpy()
+            inds = list(np.argsort(logits_action_type))
+            inds.reverse()
 
             found_valid_next_action = False
             for ind in inds:
-                if ind != self.action_index_copy and ind != self.action_index_gen:
-                    try:
-                        hyp.apply_action(act_lst[ind])
-                        action_embed_tm1 = self.embed([[ind]])
-                        found_valid_next_action = True
-                        break
-                    except:
-                        pass
-                elif ind == self.action_index_copy:
-                    try:
-                        copy_action = act_lst[ind]
-                        encoding_info = sentence_encoding[0, :, :]
-                        hidden_state = hiddens[2][0][0, :]
-                        copy_logits = self.pointer_net(encoding_info, batch_lens[0], hidden_state)
-                        _, copy_ind = torch.max(copy_logits)
-                        copy_action.token = word_lst[intent[copy_ind]]
-                        hyp.apply_action(copy_action)
-                        action_embed_tm1 = self.embed([[ind]])
-                        found_valid_next_action = True
-                    except:
-                        pass
+                # if apply rule
+                if ind != action_index_copy and ind != action_index_gen:
+                    act = act_lst[ind]
+                    if not ast_action.is_valid_action(hyp, act):
+                        continue
+                    hyp.apply_action(act)
+                    found_valid_next_action = True
+                
+                # if copy token from src
+                elif ind == action_index_copy:
+                    copy_action = GenTokenAction('')
+                    if not ast_action.is_valid_action(hyp, copy_action):
+                        continue
+                    encoding_info = sentence_encoding[0, :, :]
+                    hidden_state = hiddens[2][0][0, :]
+                    copy_logits = self.decoder.pointer_net(encoding_info, batch_lens[0], hidden_state)
+                    _, copy_ind = torch.max(copy_logits)
+                    copy_action.token = intent_text[copy_ind]
+                    hyp.apply_action(copy_action)
+                    found_valid_next_action = True
+                        
+                # if use known tokens
                 else: # genToken
-                    try:
-                        gen_action = act_lst[ind]
-                        hidden_state = hiddens[2][0][0, :]
-                        att_context_gen = att_context[0, :]
-                        gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
-                        gen_logits = self.linear_gen(gen_hidden_with_att)
-                        _, gen_ind = torch.max(gen_logits)
-                        gen_action.token = token_lst[gen_ind]
-                        hyp.apply_action(gen_action)
-                        action_embed_tm1 = self.embed([[ind]])
-                        found_valid_next_action = True
-                    except:
-                        pass
-
+                    gen_action = GenTokenAction('')
+                    if not ast_action.is_valid_action(hyp, gen_action):
+                        continue
+                    hidden_state = hiddens[2][0][0, :]
+                    att_context_gen = att_context[0, :]
+                    gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
+                    gen_logits = self.linear_gen(gen_hidden_with_att)
+                    _, gen_ind = torch.max(gen_logits, 0)
+                    gen_action.token = token_lst[gen_ind]
+                    hyp.apply_action(gen_action)
+                    found_valid_next_action = True
+                
+                # print(hyp.actions)
+                if found_valid_next_action:
+                    action_embed_tm1 = self.emb(torch.LongTensor([ind]))
+                    break
+                    
             assert found_valid_next_action
-        return [hyp]
+        return hyp
 
 
 class Model(nn.Module):
@@ -294,24 +300,28 @@ class Model(nn.Module):
         return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
                                    self.action_index_gen, batch_lens)
     
-    def parse(self, src_sentence):
+    def parse(self, intent, intent_texts, act_lst, token_lst, ast_action):
         """
         src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
         return: a list of hypotheses, ranked by decreasing score.
                 (In the case of greedy search, returns a list with length 1)
         """
         # can only handle batch size of 1
-        assert len(src_sentence) == 1
-        sentence_encoding, batch_lens, hidden = self.encoder(src_sentence)
-        return self.decode_evaluate(intent=src_sentence,
+        assert len(intent) == 1
+        hyperParams = self.hyperParams
+        sentence_encoding, batch_lens, hidden = self.encoder(intent)
+        
+        with torch.no_grad():
+            return self.decoder.decode_evaluate(intent=intent,
+                                    intent_text = intent_texts,
                                     encoder_hidden=hidden, 
                                     sentence_encoding=sentence_encoding,
-                                    word_lst=hyperParams.word_lst,
-                                    action_lst=hyperParams.action_lst,
-                                    token_lst=hyperParams.token_lst,
+                                    act_lst=act_lst,
+                                    token_lst=token_lst,
                                     action_index_copy=self.action_index_copy, 
                                     action_index_gen=self.action_index_gen, 
                                     batch_lens=batch_lens,
+                                    ast_action=ast_action,
                                     beam_size=self.hyperParams.beam_size)
 
     def save(self, path):

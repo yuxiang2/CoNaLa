@@ -115,12 +115,25 @@ class Ast_Action():
             # this assert that next action has a valid field
             if isinstance(action, ApplyRuleAction) and hypothesis.frontier_node:
                 assert action.production in grammar[hypothesis.frontier_field.type]
-                # grammar[hypothesis.frontier_field.type] is a list of possible actions
 
             hypothesis.apply_action(action)
             
         ast_from_actions = asdl_ast_to_python_ast(hypothesis.tree, grammar)
         return astor.to_source(ast_from_actions).strip()
+        
+    def is_valid_action(self, hypothesis, action):
+        parser = self.parser
+        grammar = self.grammar
+        
+        if action.__class__ not in parser.get_valid_continuation_types(hypothesis):
+            return False 
+        
+        # this assert that next action has a valid field
+        if isinstance(action, ApplyRuleAction) and hypothesis.frontier_node:
+            if action.production not in grammar[hypothesis.frontier_field.type]:
+                return False
+        
+        return True
     
 #------------------------------------------------------------------------------
 # the following create a pytorch data loader
