@@ -301,7 +301,7 @@ class Decoder(nn.Module):
     def decode_evaluate_beam(self, intent, intent_text, 
                              encoder_hidden, sentence_encoding, 
                              action_index_copy, action_index_gen, act_lst, token_lst,
-                             batch_lens, ast_action, beam_size=50, unknown_token_index=0,
+                             batch_lens, ast_action, beam_size=100, unknown_token_index=0,
                              max_time_step=100):
         """
         return: a list of hypotheses, ranked by decreasing score.
@@ -312,6 +312,7 @@ class Decoder(nn.Module):
         batch_size = 1
         hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
         action_embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
+        att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
         ## Generate beam_size of initial hypotheses
         hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding, 
@@ -320,7 +321,7 @@ class Decoder(nn.Module):
         logits_action_type = self.linear(hiddens_with_attention).view(-1)[(range(self.action_size - 1))]
         probs_action_type = F.softmax(logits_action_type, dim=0).view(-1).numpy()
         log_probs_action_type = F.log_softmax(logits_action_type, dim=0).view(-1).numpy()
-        _, sorted_ind = np.sort(-log_probs_action_type, axis=None)
+        sorted_ind = np.argsort(-log_probs_action_type, axis=None)
         hyp_infos = []   # format: [(hyp, action_embed_tm1, hiddens, att_context)_1, (hyp, action_embed_tm1, hiddens, att_context)_2, ...]
 
         for i in range(min(beam_size, self.action_size)):
@@ -341,7 +342,7 @@ class Decoder(nn.Module):
         # if t < max_time_step, continue training if any one of the hyp is incomplete;
         # otherwise, continue training until we have one complete hyp
         while (t < max_time_step and any((not hyp_info[0].completed) for hyp_info in hyp_infos)) \
-              or all((not hyp_info[0].completed) for hyp_info in hyp_infos):
+              or (t >= max_time_step and all((not hyp_info[0].completed) for hyp_info in hyp_infos)):
             tmp_hyp_infos = []
             if t % 20 == 0:
                 print("beam search step {}".format(t))
@@ -368,7 +369,7 @@ class Decoder(nn.Module):
                 valid_logits = logits_action_type[valid_action_inds]
                 probs_action_type = F.softmax(valid_logits, dim=0).view(-1).numpy()
                 log_probs_action_type = F.log_softmax(valid_logits, dim=0).view(-1).numpy()
-                _, sorted_ind = np.sort(-log_probs_action_type, axis=None)
+                sorted_ind = np.argsort(-log_probs_action_type, axis=None)
                 
                 # Generate beam_size of new hypotheses for each old hypothesis
                 for i in range(min(beam_size, len(sorted_ind))):
