@@ -155,10 +155,16 @@ for e in range(20):
 
 
 def test(model, params, ast_action, test_loader, target_lst):
+    """
+    test_loader: iterator that produce (batch_intent, batch_intent_txt).
+                 batch_intent:     (1, intent_len)
+                 batch_intent_txt: (1, intent_len)
+    target_lst: list of target code string. (dataset_len, code_len)
+    """
     model.eval()
     decode_results = []
-    for example_ind, (src_sentence, _) in enumerate(test_loader):
-        decoded_hyp = model.parse(src_sentence)
+    for example_ind, (intent, intent_txt) in enumerate(test_loader):
+        decoded_hyp = model.parse(intent)
         code = ast_action.actions2code(decoded_hyp.actions)
         code_token_list = tokenize_for_bleu_eval(code)
         target_token_list = tokenize_for_bleu_eval(target_lst[example_ind])
@@ -169,11 +175,11 @@ def test(model, params, ast_action, test_loader, target_lst):
                              code_token_list,
                              smoothing_function=SmoothingFunction().method3)
 
-        print("Intent:       {}".format(src_sentence))
+        print("Intent:       {}".format(intent_txt))
         print("Ground Truth: {}".format(target_lst[example_ind]))
         print("Predicted:    {}".format(code))
         print("BLEU score:   {}\n".format(bleu))
-        decode_results.append((src_sentence, target_lst[example_ind], code, bleu))
+        decode_results.append((intent, target_lst[example_ind], code, bleu))
         
     # if params.save_decode_to:
     #     pickle.dump(decode_results, open(params.save_decode_to, 'wb'))
