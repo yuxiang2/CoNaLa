@@ -33,17 +33,17 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, action_embed_size, encoder_hidden_size, decoder_hidden_size, action_size, token_size):
         super(Decoder, self).__init__()
-        
+
         ## fields:
         # embedding dimension for action
-        self.action_embed_size = action_embed_size  
-        
+        self.action_embed_size = action_embed_size
+
         # encoder output dimensions, used for attention
-        self.encoder_hidden_size = encoder_hidden_size 
+        self.encoder_hidden_size = encoder_hidden_size
         self.decoder_hidden_size = decoder_hidden_size
-        self.action_size = action_size + 1          # add one for padding
+        self.action_size = action_size + 1  # add one for padding
         self.token_size = token_size
-        
+
         ## network structures:
         self.emb = nn.Embedding(self.action_size, self.action_embed_size)
 
@@ -92,7 +92,7 @@ class Decoder(nn.Module):
         batch_idxs = []
         max_leng = 0
         end_symbol = self.action_size - 1
-        
+
         # extract action types and find max length
         for actions_info in batched_actions_info:
             idxs = [action_info.idx for action_info in actions_info]
@@ -123,7 +123,7 @@ class Decoder(nn.Module):
         # concatenate decoder hiddens with encoder outputs, and then flatten it
         hidden_for_att = h_t2.repeat(max_length, 1, 1).permute(1, 0, 2).contiguous()
         att_features = torch.cat((encoder_outputs, hidden_for_att), 2).view(batch_size * max_length, -1)
-        
+
         # goes to attention layer
         attn_input = self.attn(att_features)
         attn_input = attn_input.view(batch_size, max_length)
@@ -154,10 +154,10 @@ class Decoder(nn.Module):
         tgt_copy_list = []
         logits_gen_list = []
         tgt_gen_list = []
-        
+
         # initialize context vector
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
-        
+
         ## for each time step
         for t in range(length):
             # previous action embedding
@@ -176,7 +176,8 @@ class Decoder(nn.Module):
             logits_action_type[:, t, :] = self.linear(hiddens_with_attention)
 
             # get copy predictions and copy ground truth
-            for perform_copy_ind in [i for i, num in enumerate(padded_actions[:, t].tolist()) if num == action_index_copy]:
+            for perform_copy_ind in [i for i, num in enumerate(padded_actions[:, t].tolist()) if
+                                     num == action_index_copy]:
                 encoding_info = sentence_encoding[perform_copy_ind, :, :]
                 hidden_state = hiddens[2][0][perform_copy_ind, :]
                 copy_logits = self.pointer_net(encoding_info, act_lens[perform_copy_ind], hidden_state)
@@ -186,7 +187,8 @@ class Decoder(nn.Module):
                 tgt_copy_list.append(src_token_ind)
 
             # get token predictions and token ground truth
-            for perform_gen_ind in [i for i, num in enumerate(padded_actions[:, t].tolist()) if num == action_index_gen]:
+            for perform_gen_ind in [i for i, num in enumerate(padded_actions[:, t].tolist()) if
+                                    num == action_index_gen]:
                 hidden_state = hiddens[2][0][perform_gen_ind, :]
                 att_context_gen = att_context[perform_gen_ind, :]
                 gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
@@ -201,8 +203,8 @@ class Decoder(nn.Module):
         return (logits_action_type.view(batch_size * length, -1), padded_actions.view(-1)), \
                (torch.stack(logits_copy_list), torch.LongTensor(tgt_copy_list)), \
                (torch.stack(logits_gen_list), torch.LongTensor(tgt_gen_list))
-    
-    def decode_evaluate(self, intent, intent_text, encoder_hidden, sentence_encoding, action_index_copy, 
+
+    def decode_evaluate(self, intent, intent_text, encoder_hidden, sentence_encoding, action_index_copy,
                         action_index_gen, act_lst, token_lst,
                         batch_lens, ast_action, beam_size=1):
         """
@@ -216,7 +218,7 @@ class Decoder(nn.Module):
         batch_size = 1
         hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
         action_embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
-        
+
         ## initialize context vector
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
@@ -224,12 +226,14 @@ class Decoder(nn.Module):
         hyp = Hypothesis()
         while not hyp.completed:
             # decode one step
-            hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding, 
+            hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding,
                                                     batch_lens, att_context)
 
             # classify action types
             hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
             logits_action_type = self.linear(hiddens_with_attention).view(-1).numpy()
+            # print(logits_action_type.size)
+            logits_action_type[-1] = - float('inf')
             inds = list(np.argsort(logits_action_type))
             inds.reverse()
 
@@ -242,7 +246,7 @@ class Decoder(nn.Module):
                         continue
                     hyp.apply_action(act)
                     found_valid_next_action = True
-                
+
                 # if copy token from src
                 elif ind == action_index_copy:
                     copy_action = GenTokenAction('')
@@ -250,14 +254,18 @@ class Decoder(nn.Module):
                         continue
                     encoding_info = sentence_encoding[0, :, :]
                     hidden_state = hiddens[2][0][0, :]
-                    copy_logits = self.decoder.pointer_net(encoding_info, batch_lens[0], hidden_state)
-                    _, copy_ind = torch.max(copy_logits)
-                    copy_action.token = intent_text[copy_ind]
+                    copy_logits = self.pointer_net(encoding_info, batch_lens[0], hidden_state)
+                    _, copy_ind = torch.max(copy_logits, 0)
+
+                    print("copy_logits size {}".format(copy_logits.size()))
+                    print("copy_ind {}".format(copy_ind))
+
+                    copy_action.token = intent_text[0][copy_ind]
                     hyp.apply_action(copy_action)
                     found_valid_next_action = True
-                        
+
                 # if use known tokens
-                else: # genToken
+                else:  # genToken
                     gen_action = GenTokenAction('')
                     if not ast_action.is_valid_action(hyp, gen_action):
                         continue
@@ -269,12 +277,13 @@ class Decoder(nn.Module):
                     gen_action.token = token_lst[gen_ind]
                     hyp.apply_action(gen_action)
                     found_valid_next_action = True
-                
+
                 # print(hyp.actions)
                 if found_valid_next_action:
                     action_embed_tm1 = self.emb(torch.LongTensor([ind]))
                     break
-                    
+
+            # print(hyp.actions)
             assert found_valid_next_action
         return hyp
 
@@ -284,7 +293,9 @@ class Model(nn.Module):
                  encoder_lstm_layers=3):
         super(Model, self).__init__()
         self.hyperParams = hyperParams
-        self.encoder = Encoder(hyperParams.embed_size, word_size, hyperParams.hidden_size,
+        self.encoder = Encoder(hyperParams.embed_size,
+                               word_size,
+                               hyperParams.hidden_size,
                                lstm_layers=encoder_lstm_layers)
         self.decoder = Decoder(hyperParams.action_embed_size,
                                hyperParams.hidden_size * 2,
@@ -299,7 +310,7 @@ class Model(nn.Module):
         sentence_encoding, batch_lens, hidden = self.encoder(intent)
         return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
                                    self.action_index_gen, batch_lens)
-    
+
     def parse(self, intent, intent_texts, act_lst, token_lst, ast_action):
         """
         src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
@@ -310,19 +321,19 @@ class Model(nn.Module):
         assert len(intent) == 1
         hyperParams = self.hyperParams
         sentence_encoding, batch_lens, hidden = self.encoder(intent)
-        
+
         with torch.no_grad():
             return self.decoder.decode_evaluate(intent=intent,
-                                    intent_text = intent_texts,
-                                    encoder_hidden=hidden, 
-                                    sentence_encoding=sentence_encoding,
-                                    act_lst=act_lst,
-                                    token_lst=token_lst,
-                                    action_index_copy=self.action_index_copy, 
-                                    action_index_gen=self.action_index_gen, 
-                                    batch_lens=batch_lens,
-                                    ast_action=ast_action,
-                                    beam_size=self.hyperParams.beam_size)
+                                                intent_text=intent_texts,
+                                                encoder_hidden=hidden,
+                                                sentence_encoding=sentence_encoding,
+                                                act_lst=act_lst,
+                                                token_lst=token_lst,
+                                                action_index_copy=self.action_index_copy,
+                                                action_index_gen=self.action_index_gen,
+                                                batch_lens=batch_lens,
+                                                ast_action=ast_action,
+                                                beam_size=self.hyperParams.beam_size)
 
     def save(self, path):
         dir_name = os.path.dirname(path)

@@ -81,7 +81,7 @@ def action_list(actions_lst, cut_freq=3):
     
     act_list = list(act_table)
     
-    if cut_freq > 0:
+    if cut_freq >= 0:
         token_lst = [k for k in token_lst if token_lst[k] >= cut_freq]
     token_lst.append('<UNK>')
     
@@ -119,6 +119,7 @@ class Ast_Action():
             hypothesis.apply_action(action)
             
         ast_from_actions = asdl_ast_to_python_ast(hypothesis.tree, grammar)
+        # print(ast.dump(ast_from_actions))
         return astor.to_source(ast_from_actions).strip()
         
     def is_valid_action(self, hypothesis, action):
