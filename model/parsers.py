@@ -210,12 +210,11 @@ class Decoder(nn.Module):
     
     def decode_evaluate(self, intent, intent_text, encoder_hidden, sentence_encoding, 
                         action_index_copy, action_index_gen, act_lst, token_lst,
-                        batch_lens, ast_action, beam_size=1, unknown_token_index=0):
+                        batch_lens, ast_action, unknown_token_index=0):
         """
         return: a list of hypotheses, ranked by decreasing score.
                 (In the case of greedy search, returns a list with length 1)
         """
-        assert beam_size == 1
         assert len(sentence_encoding) == 1
 
         ## initialize hidden states
@@ -305,7 +304,7 @@ class Decoder(nn.Module):
                              encoder_hidden, sentence_encoding, 
                              action_index_copy, action_index_gen, act_lst, token_lst,
                              batch_lens, ast_action, beam_size=100, unknown_token_index=0,
-                             max_time_step=100):
+                             max_time_step=40):
         """
         return: a list of hypotheses, ranked by decreasing score.
         """
@@ -318,21 +317,25 @@ class Decoder(nn.Module):
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
         ## Generate beam_size of initial hypotheses
+        valid_action_inds = self.__get_valid_continue_action_list(hyp, range(self.action_size - 1), 
+                                                                  act_lst, ast_action, action_index_copy, 
+                                                                  action_index_gen)
         hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding, 
                                                 batch_lens, att_context)
         hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
-        logits_action_type = self.linear(hiddens_with_attention).view(-1)[(range(self.action_size - 1))]
-        probs_action_type = F.softmax(logits_action_type, dim=0).view(-1).numpy()
-        log_probs_action_type = F.log_softmax(logits_action_type, dim=0).view(-1).numpy()
-        sorted_ind = np.argsort(-log_probs_action_type, axis=None)
+        logits_action_type = self.linear(hiddens_with_attention).view(-1)
+        valid_logits = logits_action_type[valid_action_inds]
+        log_probs_action_type = F.log_softmax(valid_logits, dim=0).view(-1).numpy()
+        sorted_ind = np.argsort(-log_probs_action_type, axis=None)  
         hyp_infos = []   # format: [(hyp, action_embed_tm1, hiddens, att_context)_1, (hyp, action_embed_tm1, hiddens, att_context)_2, ...]
 
-        for i in range(min(beam_size, self.action_size)):
+        for i in range(min(beam_size, len(sorted_ind))):
             ind = sorted_ind[i]
             if ind == action_index_copy or ind == action_index_gen or ind == self.action_size - 1:
                 continue
 
             # push new hyp to list
+            assert ast_action.is_valid_action(hyp, act_lst[ind])
             hyp = Hypothesis()
             hyp.apply_action(act_lst[ind])
             hyp.score += log_probs_action_type[ind].item()
@@ -344,8 +347,9 @@ class Decoder(nn.Module):
         print("beam searching with size {}".format(beam_size))
         # if t < max_time_step, continue training if any one of the hyp is incomplete;
         # otherwise, continue training until we have one complete hyp
-        while (t < max_time_step and any((not hyp_info[0].completed) for hyp_info in hyp_infos)) \
-              or (t >= max_time_step and all((not hyp_info[0].completed) for hyp_info in hyp_infos)):
+        while (t < max_time_step and len(completed_hyps) < beam_size \
+            and any((not hyp_info[0].completed) for hyp_info in hyp_infos)):
+
             tmp_hyp_infos = []
             if t % 20 == 0:
                 print("beam search step {}".format(t))
@@ -353,7 +357,7 @@ class Decoder(nn.Module):
             for hyp_info in hyp_infos:
                 if hyp_info[0].completed:
                     # Save only the hypothesis for completed ones
-                    tmp_hyp_infos.append((hyp_info[0], None, None, None))
+                    completed_hyps.append(hyp_info[0])
                     continue
 
                 # Unwrap information
@@ -370,7 +374,6 @@ class Decoder(nn.Module):
                 hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
                 logits_action_type = self.linear(hiddens_with_attention).view(-1)
                 valid_logits = logits_action_type[valid_action_inds]
-                probs_action_type = F.softmax(valid_logits, dim=0).view(-1).numpy()
                 log_probs_action_type = F.log_softmax(valid_logits, dim=0).view(-1).numpy()
                 sorted_ind = np.argsort(-log_probs_action_type, axis=None)
                 
@@ -417,21 +420,95 @@ class Decoder(nn.Module):
                     tmp_hyp_infos.append((new_hyp, action_embed_tm1, hiddens, att_context))
 
             # Truncate the list to top beam_size of hypotheses
-            hyp_infos = sorted(tmp_hyp_infos, key=lambda x: -x[0].score)[:beam_size]
+            hyp_infos = sorted(tmp_hyp_infos, key=lambda x: x[0].score / float(len(x[0].actions)), reverse=True)[:beam_size]
             t += 1
-        assert len(hyp_infos) > 0  
+
+        assert len(completed_hyps) > 0  
         print("beam search done")
-        return [hyp_info[0] for hyp_info in hyp_infos if hyp_info[0].completed]
+        return sorted(completed_hyps, key=lambda x: x.score / float(len(x.actions)), reverse=True)[0]
 
     def decode_evaluate_random(self, intent, intent_text, 
                                encoder_hidden, sentence_encoding, 
                                action_index_copy, action_index_gen, act_lst, token_lst,
-                               batch_lens, ast_action, random_size=50, unknown_token_index=0,
-                               max_time_step=100):
-                               
-        return self.decode_evaluate(intent, intent_text, encoder_hidden, sentence_encoding, 
-                        action_index_copy, action_index_gen, act_lst, token_lst,
-                        batch_lens, ast_action, beam_size=1, unknown_token_index=0)
+                               batch_lens, ast_action, random_size=200, unknown_token_index=0,
+                               max_time_step=200):
+        """
+        return: a list of hypotheses, ranked by decreasing score.
+        """
+        assert len(sentence_encoding) == 1
+
+        ## initialize hidden states and context vector
+        batch_size = 1
+        hiddens = [encoder_hidden, encoder_hidden, encoder_hidden]
+        action_embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
+        att_context = torch.zeros(batch_size, self.encoder_hidden_size)
+
+        print("Random searching with size {}...".format(random_size))
+        completed_hyps = []
+        while len(completed_hyps) < random_size:
+            if len(completed_hyps) % 20:
+                print("random search {}".format(t))
+
+            ## for each time step
+            hyp = Hypothesis()
+            t = 0
+            while not hyp.completed and t < max_time_step:
+                t += 1
+
+                # decode one step
+                hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding,
+                                                        batch_lens, att_context)
+
+                # get valid next action
+                valid_action_inds = self.__get_valid_continue_action_list(hyp, range(self.action_size - 1), 
+                                                                          act_lst, ast_action, action_index_copy, 
+                                                                          action_index_gen)
+                rand_ind = np.random.choice(valid_action_inds)
+                action_embed_tm1 = self.emb(torch.LongTensor([rand_ind]))
+
+                # get score
+                hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
+                logits_action_type = self.linear(hiddens_with_attention).view(-1)
+                log_probs_action_type = F.log_softmax(logits_action_type, dim=0).numpy()
+                hyp.score += log_probs_action_type[rand_ind].item()
+
+                # if apply rule
+                if rand_ind != action_index_copy and rand_ind != action_index_gen:
+                    act = act_lst[rand_ind]
+                    assert ast_action.is_valid_action(hyp, act)
+                    hyp.apply_action(act)
+
+                # if copy token from src
+                elif rand_ind == action_index_copy:
+                    copy_action = GenTokenAction('')
+                    assert ast_action.is_valid_action(hyp, copy_action)
+                    encoding_info = sentence_encoding[0, :, :]
+                    hidden_state = hiddens[2][0][0, :]
+                    copy_logits = self.pointer_net(encoding_info, batch_lens[0], hidden_state)
+                    _, copy_ind = torch.max(copy_logits, 0)
+                    copy_token = intent_text[0][copy_ind]
+                    copy_action.token = copy_token
+                    hyp.apply_action(copy_action)
+
+                # if use known tokens
+                else:
+                    gen_action = GenTokenAction('')
+                    assert ast_action.is_valid_action(hyp, gen_action)
+                    hidden_state = hiddens[2][0][0, :]
+                    att_context_gen = att_context[0, :]
+                    gen_hidden_with_att = torch.cat((hidden_state, att_context_gen), dim=0)
+                    gen_logits = self.linear_gen(gen_hidden_with_att)
+                    _, gen_ind = torch.topk(gen_logits.view(-1), 2)
+                    if gen_ind[0].item() == unknown_token_index:
+                        gen_token = token_lst[gen_ind[1]]
+                    else:
+                        gen_token = token_lst[gen_ind[0]]
+                    gen_action.token = gen_token
+                    hyp.apply_action(gen_action)
+
+            if hyp.completed:
+                completed_hyps.append(hyp)
+        return sorted(completed_hyps, key=lambda x: x.score / float(len(x.actions)), reverse=True)[0]
 
 
 class Model(nn.Module):
@@ -459,7 +536,7 @@ class Model(nn.Module):
         return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
                                    self.action_index_gen, batch_lens)
     
-    def parse(self, intent, intent_texts, act_lst, token_lst, ast_action, decode_method='random', random_size=200):
+    def parse(self, intent, intent_texts, act_lst, token_lst, ast_action, decode_method='random', random_size=100):
         """
         src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
         return: a list of hypotheses, ranked by decreasing score.
@@ -484,8 +561,8 @@ class Model(nn.Module):
                                         ast_action=ast_action,
                                         random_size=random_size, 
                                         unknown_token_index=self.unknown_token_index, 
-                                        max_time_step=100)
-            else:
+                                        max_time_step=200)
+            elif decode_method == "beam":
                 return self.decoder.decode_evaluate_beam(intent=intent,
                                     intent_text = intent_texts,
                                     encoder_hidden=hidden, 
@@ -498,7 +575,19 @@ class Model(nn.Module):
                                     ast_action=ast_action,
                                     beam_size=self.hyperParams.beam_size,
                                     unknown_token_index=self.unknown_token_index, 
-                                    max_time_step=100)
+                                    max_time_step=80)
+            else:
+                return self.decoder.decode_evaluate(intent=intent,
+                                    intent_text = intent_texts,
+                                    encoder_hidden=hidden, 
+                                    sentence_encoding=sentence_encoding,
+                                    action_index_copy=self.action_index_copy, 
+                                    action_index_gen=self.action_index_gen, 
+                                    act_lst=act_lst,
+                                    token_lst=token_lst,
+                                    batch_lens=batch_lens,
+                                    ast_action=ast_action,
+                                    unknown_token_index=self.unknown_token_index)
                 
 
     def save(self, path):
