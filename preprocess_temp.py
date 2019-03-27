@@ -42,6 +42,8 @@ def process_data(data, mine=False):
         for e in data:
             if e['prob'] < 0.5:
                 break
+            if e['intent'] == '' or e['snippet'] == '':
+                break
             intents.append(process_intent(e['intent']))
             codes.append(process_code(e['snippet']))
             
@@ -195,6 +197,6 @@ def get_train_loader(intents, labels, word2num, code2num, token2num, batch_size=
     dataset = code_intent_pair(intents, labels, word2num, code2num, token2num)
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_lines)
     
-def get_test_loader(intents, word2num, batch_size=16):
+def get_test_loader(intents, word2num, batch_size=16, shuffle=False):
     dataset = intent_set(intents, word2num)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_lines)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_lines)

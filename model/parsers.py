@@ -165,15 +165,19 @@ class Decoder(nn.Module):
                 ## if no previous action, initialize to zero vector
                 embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
             else:
-                ## TODO add teacher forcing here, also add token embedding
-                embed_tm1 = embed[:, t - 1, :]
+                if np.random.uniform() < 0.90:   #0.95 is teacher forcing rate
+                    embed_tm1 = embed[:, t - 1, :]
+                else:
+                    __, best_act = torch.max(action_logits, 1)
+                    embed_tm1 = self.emb(best_act)
 
             # decode one step
             hiddens, att_context = self.decode_step(embed_tm1, hiddens, sentence_encoding, batch_lens, att_context)
 
             # classify action types
             hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
-            logits_action_type[:, t, :] = self.linear(hiddens_with_attention)
+            action_logits = self.linear(hiddens_with_attention)
+            logits_action_type[:, t, :] = action_logits
 
             # get copy predictions and copy ground truth
             for perform_copy_ind in [i for i, num in enumerate(padded_actions[:, t].tolist()) if
@@ -232,7 +236,6 @@ class Decoder(nn.Module):
             # classify action types
             hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
             logits_action_type = self.linear(hiddens_with_attention).view(-1).numpy()
-            # print(logits_action_type.size)
             logits_action_type[-1] = - float('inf')
             inds = list(np.argsort(logits_action_type))
             inds.reverse()
@@ -256,7 +259,8 @@ class Decoder(nn.Module):
                     hidden_state = hiddens[2][0][0, :]
                     copy_logits = self.pointer_net(encoding_info, batch_lens[0], hidden_state)
                     _, copy_ind = torch.max(copy_logits, 0)
-                    copy_action.token = intent_text[0][copy_ind]
+                    copy_token = intent_text[0][copy_ind]
+                    copy_action.token = copy_token
                     hyp.apply_action(copy_action)
                     found_valid_next_action = True
 
@@ -271,18 +275,17 @@ class Decoder(nn.Module):
                     gen_logits = self.linear_gen(gen_hidden_with_att)
                     _, gen_ind = torch.topk(gen_logits.view(-1), 2)
                     if gen_ind[0].item() == unknown_token_index:
-                        gen_action.token = token_lst[gen_ind[1]]
+                        gen_token = token_lst[gen_ind[1]]
                     else:
-                        gen_action.token = token_lst[gen_ind[0]]
+                        gen_token = token_lst[gen_ind[0]]
+                    gen_action.token = gen_token
                     hyp.apply_action(gen_action)
                     found_valid_next_action = True
 
-                # print(hyp.actions)
                 if found_valid_next_action:
                     action_embed_tm1 = self.emb(torch.LongTensor([ind]))
                     break
-
-            # print(hyp.actions)
+            
             assert found_valid_next_action
         return hyp
 
@@ -425,7 +428,10 @@ class Decoder(nn.Module):
                                action_index_copy, action_index_gen, act_lst, token_lst,
                                batch_lens, ast_action, random_size=50, unknown_token_index=0,
                                max_time_step=100):
-        raise NotImplementedError
+                               
+        return self.decode_evaluate(intent, intent_text, encoder_hidden, sentence_encoding, 
+                        action_index_copy, action_index_gen, act_lst, token_lst,
+                        batch_lens, ast_action, beam_size=1, unknown_token_index=0)
 
 
 class Model(nn.Module):
