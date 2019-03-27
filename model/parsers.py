@@ -430,7 +430,7 @@ class Decoder(nn.Module):
     def decode_evaluate_random(self, intent, intent_text, 
                                encoder_hidden, sentence_encoding, 
                                action_index_copy, action_index_gen, act_lst, token_lst,
-                               batch_lens, ast_action, random_size=200, unknown_token_index=0,
+                               batch_lens, ast_action, random_size=60, unknown_token_index=0,
                                max_time_step=200):
         """
         return: a list of hypotheses, ranked by decreasing score.
@@ -446,31 +446,33 @@ class Decoder(nn.Module):
         print("Random searching with size {}...".format(random_size))
         completed_hyps = []
         while len(completed_hyps) < random_size:
-            if len(completed_hyps) % 20:
-                print("random search {}".format(t))
+            if len(completed_hyps) % (random_size // 5) == 0:
+                print("random search {}".format(len(completed_hyps)))
 
             ## for each time step
             hyp = Hypothesis()
             t = 0
             while not hyp.completed and t < max_time_step:
-                t += 1
-
                 # decode one step
                 hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding,
                                                         batch_lens, att_context)
-
-                # get valid next action
+                hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
+                logits_action_type = self.linear(hiddens_with_attention).view(-1)
                 valid_action_inds = self.__get_valid_continue_action_list(hyp, range(self.action_size - 1), 
                                                                           act_lst, ast_action, action_index_copy, 
                                                                           action_index_gen)
-                rand_ind = np.random.choice(valid_action_inds)
-                action_embed_tm1 = self.emb(torch.LongTensor([rand_ind]))
+                valid_logits = logits_action_type[valid_action_inds]
+                probs_action_type = F.softmax(valid_logits, dim=0).numpy()
+                log_probs_action_type = F.log_softmax(valid_logits, dim=0).numpy()
 
-                # get score
-                hiddens_with_attention = torch.cat((hiddens[2][0], att_context), dim=1)
-                logits_action_type = self.linear(hiddens_with_attention).view(-1)
-                log_probs_action_type = F.log_softmax(logits_action_type, dim=0).numpy()
-                hyp.score += log_probs_action_type[rand_ind].item()
+                # randomly choose a valid next action, and calculate its score.
+                if t < 1:
+                    rand_valid_ind = list(np.argsort(-valid_logits))[0]
+                else:
+                    rand_valid_ind = np.random.choice(np.arange(len(valid_action_inds)), p=probs_action_type)
+                hyp.score += log_probs_action_type[rand_valid_ind].item()
+                rand_ind = valid_action_inds[rand_valid_ind]
+                action_embed_tm1 = self.emb(torch.LongTensor([rand_ind]))
 
                 # if apply rule
                 if rand_ind != action_index_copy and rand_ind != action_index_gen:
@@ -505,7 +507,7 @@ class Decoder(nn.Module):
                         gen_token = token_lst[gen_ind[0]]
                     gen_action.token = gen_token
                     hyp.apply_action(gen_action)
-
+                t += 1
             if hyp.completed:
                 completed_hyps.append(hyp)
         return sorted(completed_hyps, key=lambda x: x.score / float(len(x.actions)), reverse=True)[0]
@@ -536,7 +538,7 @@ class Model(nn.Module):
         return self.decoder.decode(batch_act_infos, hidden, sentence_encoding, self.action_index_copy,
                                    self.action_index_gen, batch_lens)
     
-    def parse(self, intent, intent_texts, act_lst, token_lst, ast_action, decode_method='random', random_size=100):
+    def parse(self, intent, intent_texts, act_lst, token_lst, ast_action, decode_method='random', random_size=80):
         """
         src_sentence: tensor of size (1, sentence_length). 1 is the batch size.
         return: a list of hypotheses, ranked by decreasing score.
