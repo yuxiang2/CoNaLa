@@ -226,8 +226,10 @@ class Decoder(nn.Module):
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
         ## for each time step
+        my_early_stop_cnt = 1
         hyp = Hypothesis()
-        while not hyp.completed:
+        while not hyp.completed and my_early_stop_cnt<200:
+            my_early_stop_cnt = my_early_stop_cnt+1
             # decode one step
             hiddens, att_context = self.decode_step(action_embed_tm1, hiddens, sentence_encoding,
                                                     batch_lens, att_context)
@@ -443,11 +445,11 @@ class Decoder(nn.Module):
         action_embed_tm1 = torch.zeros(batch_size, self.action_embed_size)
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
-        print("Random searching with size {}...".format(random_size))
+        # print("Random searching with size {}...".format(random_size))
         completed_hyps = []
         while len(completed_hyps) < random_size:
-            if len(completed_hyps) % 20:
-                print("random search {}".format(t))
+            # if len(completed_hyps) % 20:
+                # print("random search {}".format(t))
 
             ## for each time step
             hyp = Hypothesis()

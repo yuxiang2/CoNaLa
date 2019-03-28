@@ -15,21 +15,24 @@ import astor
 
 from dataset.action_info import *
 
+
 # should return a list of words
 ## TODO improve this
 def process_intent(intent):
-    return intent.replace('?','').split()
-   
+    return intent.replace('?', '').split()
+
+
 # should return a list of characaters   
 ## TODO improve this
 def process_code(code):
     return code
-    
+
+
 # returns have two fileds: 'intent' and 'code'
 def process_data(data, mine=False):
     intents = []
     codes = []
-    
+
     if mine == False:
         for e in data:
             if (e['rewritten_intent'] != None):
@@ -37,7 +40,7 @@ def process_data(data, mine=False):
             else:
                 intents.append(process_intent(e['intent']))
             codes.append(process_code(e['snippet']))
-            
+
     else:
         for e in data:
             if e['prob'] < 0.5:
@@ -46,9 +49,10 @@ def process_data(data, mine=False):
                 break
             intents.append(process_intent(e['intent']))
             codes.append(process_code(e['snippet']))
-            
+
     return intents, codes
-    
+
+
 # return English vocabularies occur more than cut_freq times
 def vocab_list(sentences, sos_eos=False, cut_freq=3):
     vocab = Counter()
@@ -59,13 +63,14 @@ def vocab_list(sentences, sos_eos=False, cut_freq=3):
     if cut_freq > 0:
         vocab = [k for k in vocab if vocab[k] >= cut_freq]
     vocab.append('<UNK>')
-    
+
     if sos_eos:
         vocab.append('<sos>')
         vocab.append('<eos>')
 
     return vocab
-    
+
+
 # return all possible actions, and tokens
 def action_list(actions_lst, cut_freq=3):
     act_table = set()
@@ -76,35 +81,36 @@ def action_list(actions_lst, cut_freq=3):
                 act_table.add(act)
             elif isinstance(act, GenTokenAction):
                 token_lst[act.token] += 1
-    
+
     act_table.add(ReduceAction())
     act_table.add(GenTokenAction('token'))
     act_table.add(GenTokenAction('copy'))
-    
+
     act_list = list(act_table)
-    
+
     if cut_freq >= 0:
         token_lst = [k for k in token_lst if token_lst[k] >= cut_freq]
     token_lst.append('<UNK>')
-    
+
     return act_list, token_lst
-    
-#------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 # the following create a ast2action and action2ast converter
 class Ast_Action():
     def __init__(self, grammar_file='./asdl/lang/py3/py3_asdl.simplified.txt'):
         grammar_text = open(grammar_file).read()
         self.grammar = ASDLGrammar.from_text(grammar_text)
         self.parser = Python3TransitionSystem(self.grammar)
-        
+
     def code2actions(self, code):
-        grammar = self.grammar 
+        grammar = self.grammar
         py_ast = ast.parse(code)
         asdl_ast = python_ast_to_asdl_ast(py_ast.body[0], grammar)
         parser = self.parser
         actions = parser.get_actions(asdl_ast)
-        return actions 
-        
+        return actions
+
     def actions2code(self, actions):
         parser = self.parser
         grammar = self.grammar
@@ -119,30 +125,31 @@ class Ast_Action():
                 assert action.production in grammar[hypothesis.frontier_field.type]
 
             hypothesis.apply_action(action)
-            
+
         ast_from_actions = asdl_ast_to_python_ast(hypothesis.tree, grammar)
         # print(ast.dump(ast_from_actions))
         return astor.to_source(ast_from_actions).strip()
-        
+
     def is_valid_action(self, hypothesis, action):
         parser = self.parser
         grammar = self.grammar
-        
+
         if action.__class__ not in parser.get_valid_continuation_types(hypothesis):
-            return False 
-        
-        # this assert that next action has a valid field
+            return False
+
+            # this assert that next action has a valid field
         if isinstance(action, ApplyRuleAction) and hypothesis.frontier_node:
             if action.production not in grammar[hypothesis.frontier_field.type]:
                 return False
-        
+
         return True
-    
-#------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 # the following create a pytorch data loader
 class code_intent_pair(Dataset):
     def __init__(self, intents, actions_lst, word2num, code2num, token2num):
-        
+
         # convert each intent into numbers
         self.intents = []
         for intent in intents:
@@ -153,18 +160,19 @@ class code_intent_pair(Dataset):
                 else:
                     num_intent.append(word2num['<UNK>'])
             self.intents.append(num_intent)
-    
+
         self.action_infos_list = []
-        for intent,actions in zip(intents,actions_lst):
+        for intent, actions in zip(intents, actions_lst):
             act_info = get_action_infos(intent, actions, code2num, token2num)
             self.action_infos_list.append(act_info)
-        
-    def __len__(self): 
+
+    def __len__(self):
         return len(self.intents)
-    
+
     def __getitem__(self, idx):
         return (self.intents[idx], self.action_infos_list[idx])
-        
+
+
 class intent_set(Dataset):
     def __init__(self, intents, word2num):
         self.intents = intents
@@ -177,13 +185,14 @@ class intent_set(Dataset):
                 else:
                     num_intent.append(word2num['<UNK>'])
             self.num_intents.append(np.array(num_intent))
-        
-    def __len__(self): 
+
+    def __len__(self):
         return len(self.intents)
-    
+
     def __getitem__(self, idx):
         return self.num_intents[idx], self.intents[idx]
-        
+
+
 # sort the data by length, so we can do packed sequence learning
 def collate_lines(seq_list):
     inputs, targets = zip(*seq_list)
@@ -192,11 +201,13 @@ def collate_lines(seq_list):
     inputs = [torch.LongTensor(inputs[i]) for i in seq_order]
     targets = [targets[i] for i in seq_order]
     return inputs, targets
- 
+
+
 def get_train_loader(intents, labels, word2num, code2num, token2num, batch_size=16):
     dataset = code_intent_pair(intents, labels, word2num, code2num, token2num)
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_lines)
-    
+
+
 def get_test_loader(intents, word2num, batch_size=16, shuffle=False):
     dataset = intent_set(intents, word2num)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_lines)
