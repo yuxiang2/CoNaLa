@@ -319,6 +319,7 @@ class Decoder(nn.Module):
         att_context = torch.zeros(batch_size, self.encoder_hidden_size)
 
         ## Generate beam_size of initial hypotheses
+        hyp = Hypothesis()
         valid_action_inds = self.__get_valid_continue_action_list(hyp, range(self.action_size - 1), 
                                                                   act_lst, ast_action, action_index_copy, 
                                                                   action_index_gen)
@@ -332,25 +333,27 @@ class Decoder(nn.Module):
         hyp_infos = []   # format: [(hyp, action_embed_tm1, hiddens, att_context)_1, (hyp, action_embed_tm1, hiddens, att_context)_2, ...]
 
         for i in range(min(beam_size, len(sorted_ind))):
-            ind = sorted_ind[i]
+            valid_ind = sorted_ind[i]
+            ind = valid_action_inds[valid_ind]
             if ind == action_index_copy or ind == action_index_gen or ind == self.action_size - 1:
                 continue
 
             # push new hyp to list
-            assert ast_action.is_valid_action(hyp, act_lst[ind])
             hyp = Hypothesis()
+            assert ast_action.is_valid_action(hyp, act_lst[ind])
             hyp.apply_action(act_lst[ind])
-            hyp.score += log_probs_action_type[ind].item()
+            hyp.score += log_probs_action_type[valid_ind].item()
             action_embed_tm1 = self.emb(torch.LongTensor([ind]))
             hyp_infos.append((hyp, action_embed_tm1, hiddens, att_context))
 
         ## for each time step...
         t = 0
+        completed_hyps = []
         print("beam searching with size {}".format(beam_size))
         # if t < max_time_step, continue training if any one of the hyp is incomplete;
         # otherwise, continue training until we have one complete hyp
-        while (t < max_time_step and len(completed_hyps) < beam_size \
-            and any((not hyp_info[0].completed) for hyp_info in hyp_infos)):
+        while t < max_time_step and len(completed_hyps) < beam_size \
+            and any((not hyp_info[0].completed) for hyp_info in hyp_infos):
 
             tmp_hyp_infos = []
             if t % 20 == 0:
