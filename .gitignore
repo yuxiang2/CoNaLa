@@ -1,7 +1,0 @@
-*.json
-*.jsonl
-*__pycache__/
-*.DS_Store
-*.pyc
-*conala-corpus/
-*.ipynb_checkpoints/

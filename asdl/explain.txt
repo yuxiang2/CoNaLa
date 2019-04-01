@@ -1,0 +1,9 @@
+grammar:
+
+grammar = list of productions + list of primitive types
+production = type + constructor
+constructor = name + fields
+field = (name, filed_type, cardinality)
+	filed_type is same as production type
+
+ASDL grammar doesn't define composite types not primitive types

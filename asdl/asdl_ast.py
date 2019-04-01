@@ -5,7 +5,7 @@ try:
 except:
     from io import StringIO
 
-from .asdl import *
+from asdl import *
 
 
 class AbstractSyntaxTree(object):

@@ -2,9 +2,13 @@
 from collections import OrderedDict, Counter
 from itertools import chain
 
-from .utils import remove_comment
+import re
+def remove_comment(text):
+    text = re.sub(re.compile("#.*"), "", text)
+    text = '\n'.join(filter(lambda x: x, text.split('\n')))
 
-
+    return text
+    
 class ASDLGrammar(object):
     """
     Collection of types, constructors and productions
@@ -118,18 +122,19 @@ class ASDLGrammar(object):
 
             return ASDLConstructor(name, fields)
 
+        # remove comments, 
         lines = remove_comment(text).split('\n')
+        # remove leading and trailing spaces
         lines = list(map(lambda l: l.strip(), lines))
+        # remove empty string
         lines = list(filter(lambda l: l, lines))
-        line_no = 0
-
-        # first line is always the primitive types
-        primitive_type_names = list(map(lambda x: x.strip(), lines[line_no].split(',')))
-        line_no += 1
-
+        
+        # first line is always the primitive types, list all primitive types of python
+        primitive_type_names = list(map(lambda x: x.strip(), lines[0].split(',')))
+        
+        line_no = 1
         all_productions = list()
-
-        while True:
+        while line_no < len(lines):
             type_block = lines[line_no]
             type_name = type_block[:type_block.find('=')].strip()
             constructors_blocks = type_block[type_block.find('=') + 1:].split('|')
@@ -138,21 +143,16 @@ class ASDLGrammar(object):
                 t = lines[i].strip()
                 cont_constructors_blocks = t[1:].split('|')
                 constructors_blocks.extend(cont_constructors_blocks)
-
                 i += 1
 
             constructors_blocks = filter(lambda x: x and x.strip(), constructors_blocks)
-
-            # parse type name
-            new_type = ASDLPrimitiveType(type_name) if type_name in primitive_type_names else ASDLCompositeType(type_name)
             constructors = map(_parse_constructor_from_text, constructors_blocks)
 
+            new_type = ASDLPrimitiveType(type_name) if type_name in primitive_type_names else ASDLCompositeType(type_name)
             productions = list(map(lambda c: ASDLProduction(new_type, c), constructors))
             all_productions.extend(productions)
 
             line_no = i
-            if line_no == len(lines):
-                break
 
         grammar = ASDLGrammar(all_productions)
 

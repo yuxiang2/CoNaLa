@@ -1,8 +1,8 @@
 # coding=utf-8
 
-from .asdl import *
-from .asdl_ast import AbstractSyntaxTree
-from .transition_system import *
+from asdl import *
+from asdl_ast import AbstractSyntaxTree
+from transition_system import *
 
 
 class Hypothesis(object):
