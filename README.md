@@ -8,8 +8,6 @@ Implementation: https://github.com/pcyin/tranX
 
 ## File Structure
 ```bash
-├── asdl (grammar-based transition system)
-├── dataset (dataset specific code like data preprocessing/evaluation/etc.)
-├ Model.py (PyTorch implementation of neural nets)
-├ conala_main.py (The main function that runs the training and testing procedures.)
-```
+├── asdl (grammar-based transition system, preprocessing data, use python preprocess.py to run)
+├── corpus (training corpus)
+├── preprocessed_data (store vocabulary, and preprocessed data)
