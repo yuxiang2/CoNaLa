@@ -6,8 +6,6 @@ from py_utils import tokenize_code
 from transition_system import TransitionSystem, GenTokenAction
 from registerable import Registrable
 
-
-@Registrable.register('python3')
 class Python3TransitionSystem(TransitionSystem):
     def tokenize_code(self, code, mode=None):
         return tokenize_code(code, mode)
