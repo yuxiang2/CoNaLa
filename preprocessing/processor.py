@@ -58,9 +58,9 @@ class Code_Intent_Pairs():
                 intent.append(self.num2word[idx])
         return intent
     
-    def code2idx(self, code, intent, copy=True):
+    def code2idx(self, code, intent=None):
         code_dict = self.code2num
-        if copy:
+        if intent != None:
             idxes = []
             for token in code:
                 if token in code_dict:
@@ -122,8 +122,8 @@ class Code_Intent_Pairs():
         for entry in entries:
             intent, code, slot_map = entry
             intent_idx = self.intent2idx(intent)
-            code_idx_copy = self.code2idx(code, intent, copy=True)
-            code_idx_nocopy = self.code2idx(code, intent, copy=False)
+            code_idx_copy = self.code2idx(code, intent)
+            code_idx_nocopy = self.code2idx(code)
             entry_dict = {
                 'intent': intent,
                 'code': code,
@@ -183,45 +183,53 @@ class Code_Intent_Pairs():
             'word_pad': self.word2num['<pad>'],
             'word_sos': self.word2num['<sos>'],
             'word_eos': self.word2num['<eos>'],
-            'code_pad': self.word2num['<pad>'],
-            'code_sos': self.word2num['<sos>'],
-            'code_eos': self.word2num['<eos>'],
+            'code_pad': self.code2num['<pad>'],
+            'code_sos': self.code2num['<sos>'],
+            'code_eos': self.code2num['<eos>'],
         }
             
      
     
 ### Handle code language model processing
-# class Code():
-#     def __init__(self):
-#         self.num2code = None
-#         self.code2num = None
-#         self.entries = None
+class Code():
+    def __init__(self):
+        self.num2code = None
+        self.code2num = None
+        self.codes_indx = None
 
-#     def load_dict(self, path=None):
-#         if path == None:
-#             path = '../vocab/'
-#         code_dict_path = path + 'code_dict.bin'
-#         self.num2code = pickle.load(open(code_dict_path, 'rb'))
-#         self.code2num = dict(zip(self.num2code, range(0,len(self.num2code))))
+    def load_dict(self, path=None):
+        if path == None:
+            path = '../vocab/'
+        code_dict_path = path + 'code_dict.bin'
+        self.num2code = pickle.load(open(code_dict_path, 'rb'))
+        self.code2num = dict(zip(self.num2code, range(0,len(self.num2code))))
         
-#     def load_raw_data(self, path):
-#         raw_entries = get_raw_entries(path)
-#         entries = [tokenize_conala_entry(entry) for entry in raw_entries]
-
-#         self.entries = []
-#         for entry in entries:
-#             intent, code, slot_map = entry
-#             intent_idx = self.intent2idx(intent)
-#             code_idx_copy = self.code2idx(code, intent, copy=True)
-#             code_idx_nocopy = self.code2idx(code, intent, copy=False)
-#             entry_dict = {
-#                 'intent': intent,
-#                 'code': code,
-#                 'slot_map': slot_map,
-#                 'intent_indx': intent_idx,
-#                 'code_indx_copy': code_idx_copy,
-#                 'code_indx_nocopy': code_idx_nocopy
-#             }
-#             self.entries.append(entry_dict)
-#         return self.entries
+    def get_special_symbols(self):
+        return {
+            'pad': self.code2num['<pad>'],
+            'sos': self.code2num['<sos>'],
+            'eos': self.code2num['<eos>'],
+        }
+    
+    def code2idx(self, code):
+        code_dict = self.code2num
+        unk = code_dict['<unk>']
+        return [code_dict[token] if token in code_dict else unk for token in code]
+        
+    def load_data(self, path):
+        with open(path, 'r') as f:
+            lines_token = [tokenize_code(line) for line in f]
+        self.codes_indx = [self.code2idx(line_token) for line_token in lines_token]
+        return self.codes_indx
+    
+    def pad(self, pad_length=1):
+        if pad_length <= 0:
+            return self.code_indxes
+        sos = self.code2num['<sos>']
+        eos = self.code2num['<eos>']
+        for i in range(len(self.codes_indx)):
+            self.codes_indx[i] = [sos] * pad_length \
+                + self.codes_indx[i] + [eos] * pad_length
+        return self.codes_indx
+                
     
