@@ -26,16 +26,9 @@ def process_data(data, mine=False):
     slot_maps = []
     if mine == False:
         for e in data:
-            if (e['rewritten_intent'] != None):
-                # print(e['rewritten_intent'])
-                intent_tokens, slot_map = process_intent(e['rewritten_intent'])
-                intents.append(intent_tokens)
-            else:
-                # print(e['intent'])
-                intent_tokens, slot_map = process_intent(e['intent'])
-                intents.append(intent_tokens)
-            # print(e['snippet'])
-            codes.append(process_code(e['snippet'], slot_map))
+            intent_tokens, slot_map = process_intent(e['intent'])
+            intents.append(intent_tokens)
+            codes.append(process_code(e['code'], slot_map))
             slot_maps.append(slot_map)
 
     return intents, codes, slot_maps
@@ -52,7 +45,7 @@ def vocab_list(sentences, sos_eos=True, cut_freq=2):
         vocab = [k for k in vocab if vocab[k] >= cut_freq]
     vocab.append('<UNK>')
     if sos_eos:
-        # vocab.append('<sos>')
+        vocab.append('<sos>')
         vocab.append('<eos>')
 
     return vocab
@@ -71,7 +64,7 @@ def code_list(codes, sos_eos=True, cut_freq=2):
     vocab.append('<pad>')
 
     if sos_eos:
-        # vocab.append('<sos>')
+        vocab.append('<sos>')
         vocab.append('<eos>')
 
     return vocab
@@ -97,6 +90,7 @@ class code_intent_pair(Dataset):
         self.codes = []
         for code in code_lst:
             num_intent = []
+            num_intent.append(code2num['<sos>'])
             for word in code:
                 if word in code2num:
                     num_intent.append(code2num[word])
@@ -143,14 +137,14 @@ def collate_lines(seq_list):
 
     max_len_code = 0
     for i in range(len(targets)):
-        if len(targets[i])>max_len_code:
+        if len(targets[i]) > max_len_code:
             max_len_code = len(targets[i])
 
     for i in range(len(targets)):
         targets[i] = targets[i] + [754] * (max_len_code - len(targets[i]))
-        print((len(targets[i])))
+        # print((len(targets[i])))
 
-    return inputs, torch.Tensor(targets)
+    return inputs, torch.LongTensor(targets)
 
 
 def get_train_loader(intents, labels, word2num, code2num, batch_size=16):

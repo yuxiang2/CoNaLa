@@ -23,6 +23,7 @@ class Encoder(nn.Module):
 
         packed = U.rnn.pack_sequence(embed)
         outputs, hidden = self.gru(packed, hidden)
+        outputs, output_lengths = U.rnn.pad_packed_sequence(outputs)
         # sum bidirectional outputs
         outputs = (outputs[:, :, :self.hidden_size] +
                    outputs[:, :, self.hidden_size:])
@@ -73,6 +74,7 @@ class Decoder(nn.Module):
     def forward(self, input, last_hidden, encoder_outputs):
         # Get the embedding of the current input word (last output word)
         embedded = self.embed(input).unsqueeze(0)  # (1,B,N)
+        print(embedded.size())
         embedded = self.dropout(embedded)
         # Calculate attention weights and apply to encoder outputs
         attn_weights = self.attention(last_hidden[-1], encoder_outputs)
@@ -96,13 +98,19 @@ class Seq2Seq(nn.Module):
 
     def forward(self, src, trg, device, teacher_forcing_ratio=0.5):
         batch_size = len(src)
-        max_len = trg.size(0)
+        max_len = trg.size(1)
+        print(trg.size())
+        print(trg)
         vocab_size = self.decoder.output_size
         outputs = Variable(torch.zeros(max_len, batch_size, vocab_size)).to(device)
 
         encoder_output, hidden = self.encoder(src)
+        print(encoder_output.size())
         hidden = hidden[:self.decoder.n_layers]
-        output = Variable(trg.data[0, :])  # sos
+        print(hidden.size())
+
+        output = Variable(trg.data[:, 0])  # sos
+        print(output.size())
         for t in range(1, max_len):
             output, hidden, attn_weights = self.decoder(
                     output, hidden, encoder_output)
