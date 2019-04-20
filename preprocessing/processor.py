@@ -12,9 +12,13 @@ def sub_slotmap(tokens, slot_map):
     for i in range(len(tokens)):
         if tokens[i] in slot_map:
             tokens[i] = slot_map[tokens[i]]['value']
-        # elif len(tokens[i] > 1) and tokens[i][1:] in slot_map:
+        elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
+            slot = slot_map[tokens[i][1:-1]]
+            quote = tokens[i][0]
+            value = slot['value']
+            tokens[i] = quote + value + quote
             
-    return ' '.join(tokens)
+    return ''.join(tokens)
 
 def tokenize_conala_entry(entry):
     intent, slot_map = process_intent(entry['intent'])
@@ -27,6 +31,7 @@ def get_raw_entries(path=None):
     with open(path) as f:
         return json.load(f)
 
+### Handle all pre/post-processing of Code-Intent Pair
 class Code_Intent_Pairs():
     def __init__(self):
         self.num2word = None
@@ -44,7 +49,14 @@ class Code_Intent_Pairs():
         return [word_dict[word] if word in word_dict else unk for word in intent]
     
     def idx2intent(self, idxes):
-        return [self.num2word[idx] for idx in idxes]
+        intent = []
+        sos = self.word2num['<sos>']
+        eos = self.word2num['<eos>']
+        pad = self.word2num['<pad>']
+        for idx in idxes:
+            if idx not in (sos, eos, pad):
+                intent.append(self.num2word[idx])
+        return intent
     
     def code2idx(self, code, intent, copy=True):
         code_dict = self.code2num
@@ -64,11 +76,15 @@ class Code_Intent_Pairs():
         
     def idx2code(self, idxes, intent):
         tokens = []
+        sos = self.code2num['<sos>']
+        eos = self.code2num['<eos>']
+        pad = self.code2num['<pad>']
         num2code = self.num2code
         size = len(num2code)
         for idx in idxes:
             if idx < size:
-                tokens.append(num2code[idx])
+                if idx not in (sos, eos, pad):
+                    tokens.append(num2code[idx])
             else:
                 tokens.append(intent[idx-size])
         return tokens
@@ -145,3 +161,67 @@ class Code_Intent_Pairs():
         code_dict_path = path + 'code_dict.bin'
         self.num2code = pickle.load(open(code_dict_path, 'rb'))
         self.code2num = dict(zip(self.num2code, range(0,len(self.num2code))))
+        
+    def pad(self, pad_code=True, pad_intent=False):
+        if not pad_code and not pad_intent:
+            return self.entries
+        if pad_code:
+            code_sos = self.code2num['<sos>']
+            code_eos = self.code2num['<eos>']
+        if pad_intent:
+            intent_sos = self.word2num['<sos>']
+            intent_eos = self.word2num['<eos>']
+        for entry in self.entries:
+            if pad_code:
+                entry['code_indx_copy'] = [code_sos] + entry['code_indx_copy'] + [code_eos]
+                entry['code_indx_nocopy'] = [code_sos] + entry['code_indx_nocopy'] + [code_eos]
+            if pad_intent:
+                entry['intent_indx'] = [intent_sos] + entry['intent_indx'] + [intent_eos]
+    
+    def get_special_symbols(self):
+        return {
+            'word_pad': self.word2num['<pad>'],
+            'word_sos': self.word2num['<sos>'],
+            'word_eos': self.word2num['<eos>'],
+            'code_pad': self.word2num['<pad>'],
+            'code_sos': self.word2num['<sos>'],
+            'code_eos': self.word2num['<eos>'],
+        }
+            
+     
+    
+### Handle code language model processing
+# class Code():
+#     def __init__(self):
+#         self.num2code = None
+#         self.code2num = None
+#         self.entries = None
+
+#     def load_dict(self, path=None):
+#         if path == None:
+#             path = '../vocab/'
+#         code_dict_path = path + 'code_dict.bin'
+#         self.num2code = pickle.load(open(code_dict_path, 'rb'))
+#         self.code2num = dict(zip(self.num2code, range(0,len(self.num2code))))
+        
+#     def load_raw_data(self, path):
+#         raw_entries = get_raw_entries(path)
+#         entries = [tokenize_conala_entry(entry) for entry in raw_entries]
+
+#         self.entries = []
+#         for entry in entries:
+#             intent, code, slot_map = entry
+#             intent_idx = self.intent2idx(intent)
+#             code_idx_copy = self.code2idx(code, intent, copy=True)
+#             code_idx_nocopy = self.code2idx(code, intent, copy=False)
+#             entry_dict = {
+#                 'intent': intent,
+#                 'code': code,
+#                 'slot_map': slot_map,
+#                 'intent_indx': intent_idx,
+#                 'code_indx_copy': code_idx_copy,
+#                 'code_indx_nocopy': code_idx_nocopy
+#             }
+#             self.entries.append(entry_dict)
+#         return self.entries
+    
