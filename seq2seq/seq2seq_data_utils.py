@@ -84,7 +84,7 @@ class code_intent_pair(Dataset):
                     num_intent.append(word2num[word])
                 else:
                     num_intent.append(word2num['<UNK>'])
-                num_intent.append(word2num['<eos>'])
+            num_intent.append(word2num['<eos>'])
             self.intents.append(num_intent)
 
         self.codes = []
@@ -96,7 +96,7 @@ class code_intent_pair(Dataset):
                     num_intent.append(code2num[word])
                 else:
                     num_intent.append(code2num['<UNK>'])
-                num_intent.append(code2num['<eos>'])
+            num_intent.append(code2num['<eos>'])
             self.codes.append(num_intent)
 
     def __len__(self):

@@ -51,16 +51,18 @@ def train(e, model, optimizer, train_iter, vocab_size, grad_clip, word2num, code
         # src, trg = src.to(device), trg.to(device)
         optimizer.zero_grad()
         output = model(src, trg, device)
-        loss = F.nll_loss(output[1:].view(-1, vocab_size),
-                          trg[1:].contiguous().view(-1),
+        # print("final outputs: ", output.size(),output.view(-1, vocab_size).size())
+        # print("ground truth: ", trg[:,1:].size())
+        loss = F.nll_loss(output.view(-1, vocab_size),
+                          trg[:,1:].contiguous().view(-1),
                           ignore_index=pad)
         loss.backward()
         clip_grad_norm(model.parameters(), grad_clip)
         optimizer.step()
-        total_loss += loss.data[0]
+        total_loss += loss.data
 
-        if b % 100 == 0 and b != 0:
-            total_loss = total_loss / 100
+        if b % 10 == 0 and b != 0:
+            total_loss = total_loss / 10
             print("[%d][loss:%5.2f][pp:%5.2f]" %
                   (b, total_loss, math.exp(total_loss)))
             total_loss = 0
@@ -73,7 +75,7 @@ def main():
 
     print("[!] preparing dataset...")
     train_loader, val_loader, test_loader, word2num, code2num = load_dataset(args.batch_size)
-    word_size, code_size = len(word2num), len(code2num)
+    word_size, code_size = len(word2num)+1, len(code2num)+1
     print("[word_size]:%d [code_size]:%d" % (word_size, code_size))
 
     print("[!] Instantiating models...")

@@ -6,6 +6,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.nn.utils as U
 
+
 class Encoder(nn.Module):
     def __init__(self, input_size, embed_size, hidden_size,
                  n_layers=1, dropout=0.5):
@@ -44,7 +45,7 @@ class Attention(nn.Module):
         h = hidden.repeat(timestep, 1, 1).transpose(0, 1)
         encoder_outputs = encoder_outputs.transpose(0, 1)  # [B*T*H]
         attn_energies = self.score(h, encoder_outputs)
-        return F.relu(attn_energies, dim=1).unsqueeze(1)
+        return F.relu(attn_energies).unsqueeze(1)
 
     def score(self, hidden, encoder_outputs):
         # [B*T*2H]->[B*T*H]
@@ -73,8 +74,8 @@ class Decoder(nn.Module):
 
     def forward(self, input, last_hidden, encoder_outputs):
         # Get the embedding of the current input word (last output word)
+        # print("decoder input size: ", input.size(), input)
         embedded = self.embed(input).unsqueeze(0)  # (1,B,N)
-        print(embedded.size())
         embedded = self.dropout(embedded)
         # Calculate attention weights and apply to encoder outputs
         attn_weights = self.attention(last_hidden[-1], encoder_outputs)
@@ -99,23 +100,25 @@ class Seq2Seq(nn.Module):
     def forward(self, src, trg, device, teacher_forcing_ratio=0.5):
         batch_size = len(src)
         max_len = trg.size(1)
-        print(trg.size())
-        print(trg)
+        # print("trg: ", trg.size())
+        # print(trg)
         vocab_size = self.decoder.output_size
-        outputs = Variable(torch.zeros(max_len, batch_size, vocab_size)).to(device)
+        outputs = Variable(torch.zeros(max_len - 1, batch_size, vocab_size)).to(device)
 
         encoder_output, hidden = self.encoder(src)
-        print(encoder_output.size())
+        # print("encoder_output: ", encoder_output.size())
         hidden = hidden[:self.decoder.n_layers]
-        print(hidden.size())
+        # print("hidden: ", hidden.size())
 
         output = Variable(trg.data[:, 0])  # sos
-        print(output.size())
         for t in range(1, max_len):
             output, hidden, attn_weights = self.decoder(
-                    output, hidden, encoder_output)
-            outputs[t] = output
+                output, hidden, encoder_output)
+            outputs[t - 1] = output
+            # print("decoder output size: ", output.size())
             is_teacher = random.random() < teacher_forcing_ratio
             top1 = output.data.max(1)[1]
-            output = Variable(trg.data[t] if is_teacher else top1).cuda()
+            # print("top1: ", top1.size())
+            output = Variable(trg.data[:, t] if is_teacher else top1).to(device)
+
         return outputs
