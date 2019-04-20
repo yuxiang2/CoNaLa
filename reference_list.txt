@@ -1,0 +1,11 @@
+Encoder Decoder: https://arxiv.org/abs/1406.1078
+		 https://arxiv.org/abs/1409.3215
+LSTM: https://www.bioinf.jku.at/publications/older/2604.pdf
+
+Pointer Network: https://arxiv.org/abs/1506.03134
+CopyNet: https://arxiv.org/abs/1603.06393
+Easier Copy: https://arxiv.org/pdf/1606.03622.pdf
+
+Attention: https://arxiv.org/abs/1409.0473
+
+TranX: https://arxiv.org/abs/1810.02720
