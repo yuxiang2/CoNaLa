@@ -1,0 +1,22 @@
+self . _post , self . _files = self . parse_file_upload ( self . META , data )
+formatters = config . get ( 'formatters' , EMPTY_DICT )
+if token . contents == 'else' :
+if register_to :
+escaper = lambda x : x
+return self
+if ( self . validate_min and  self . total_form_count ( ) - len ( self . deleted_forms ) < self . min_num ) :
+self . _current_app = current_app
+instance . keyOrder = [ ]
+conditions_nodelists = [ ( condition , nodelist ) ]
+self . _cached_loaders = [ ]
+def convert_old_style_list ( list_ ) :
+return self . _create_attachments ( self . _create_alternatives ( msg ) )
+if not form . has_changed ( ) :
+if self . no_obsolete :
+constant_string = constant_string . replace ( "\n" , "" )
+def configure_logging ( logging_config , logging_settings ) :
+parser . add_argument ( '--natural-foreign' , action = 'store_true' , dest = 'use_natural_foreign_keys' , default = False ,  help = 'Use natural foreign keys if they are available.' )
+encoded = encoded . replace ( ";" , "\\073" ) . replace ( "," , "\\054" )
+from xml . sax . expatreader import ExpatParser as _ExpatParser
+self . _js = [ ]
+self . file_name = file_name
