@@ -6,7 +6,7 @@ import numpy as np
 from preprocessing.tokenizer import tokenize_intent, tokenize_code, canonicalize_code
 import torch.nn as nn
 import torch.nn.functional as F
-
+import os
 
 # should return a list of words
 def process_intent(intent):
@@ -158,7 +158,7 @@ def get_test_loader(intents, word2num, batch_size=16, shuffle=False):
 
 
 def load_dataset(batch_size):
-    directory = '../corpus/'
+    directory = os.path.dirname(os.path.abspath(__file__))+'/../corpus/'
     train_file = directory + 'train.json'
     test_file = directory + 'test.json'
 
