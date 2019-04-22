@@ -138,6 +138,25 @@ class Code_Intent_Pairs():
             self.entries.append(entry_dict)
         return self.entries
     
+    def load_raw_test_data(self, path):
+        raw_entries = get_raw_entries(path)
+        entries = [tokenize_conala_entry(entry) for entry in raw_entries]
+
+        self.entries = []
+        for i in range(len(entries)):
+            intent, _, slot_map = entries[i]
+            intent_idx = self.intent2idx(intent)
+            intent = raw_entries[i]['intent']
+            code = raw_entries[i]['code']
+            entry_dict = {
+                'intent': intent,
+                'code': code,
+                'slot_map': slot_map,
+                'intent_indx': intent_idx,
+            }
+            self.entries.append(entry_dict)
+        return self.entries
+    
     def store_entries(self, path):
         with open(path, 'w') as f:
             json.dump(self.entries, f, indent=2)

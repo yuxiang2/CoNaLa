@@ -55,10 +55,10 @@ class get_test_loader(Dataset):
     
     def __getitem__(self, idx):
         intent_idx = self.code_intent_pair[idx]['intent_indx']
-        code_idx = self.code_intent_pair[idx]['code_indx_copy']
+        code = self.code_intent_pair[idx]['code']
         slot_map = self.code_intent_pair[idx]['slot_map']
         intent = self.code_intent_pair[idx]['intent']
-        return (torch.LongTensor([intent_idx]), slot_map, code_idx, intent)
+        return (torch.LongTensor([intent_idx]), slot_map, code, intent)
         
 # def get_test_loader(test_entries):
     # testset = TestSet(test_entries)
