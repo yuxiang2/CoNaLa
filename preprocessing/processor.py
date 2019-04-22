@@ -1,6 +1,6 @@
 import json
 import pickle
-from tokenizer import tokenize_intent, tokenize_code
+from .tokenizer import tokenize_intent, tokenize_code
 from collections import Counter
 
 def process_intent(intent):
@@ -18,7 +18,7 @@ def sub_slotmap(tokens, slot_map):
             value = slot['value']
             tokens[i] = quote + value + quote
             
-    return ''.join(tokens)
+    return ' '.join(tokens)
 
 def tokenize_conala_entry(entry):
     intent, slot_map = process_intent(entry['intent'])
@@ -74,20 +74,23 @@ class Code_Intent_Pairs():
             unk = code_dict['<unk>']
             return [code_dict[token] if token in code_dict else unk for token in code]
         
-    def idx2code(self, idxes, intent):
+    def idx2code(self, idxes, intent=None):
         tokens = []
         sos = self.code2num['<sos>']
         eos = self.code2num['<eos>']
         pad = self.code2num['<pad>']
         num2code = self.num2code
         size = len(num2code)
-        for idx in idxes:
-            if idx < size:
-                if idx not in (sos, eos, pad):
-                    tokens.append(num2code[idx])
-            else:
-                tokens.append(intent[idx-size])
-        return tokens
+        if intent!=None:
+            for idx in idxes:
+                if idx < size:
+                    if idx not in (sos, eos, pad):
+                        tokens.append(num2code[idx])
+                else:
+                    tokens.append(intent[idx-size])
+            return tokens
+        else:
+            return [num2code[idx] for idx in idxes]
     
     def get_dict_from_raw(self, path=None, word_cut_freq=5, code_cut_freq=3, copy=True, store=True):
         raw_entries = get_raw_entries()
@@ -187,6 +190,12 @@ class Code_Intent_Pairs():
             'code_sos': self.code2num['<sos>'],
             'code_eos': self.code2num['<eos>'],
         }
+        
+    def get_word_size(self):
+        return len(self.num2word)
+        
+    def get_code_size(self):
+        return len(self.num2code)
             
      
     
