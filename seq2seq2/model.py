@@ -139,6 +139,11 @@ class Seq2Seq(nn.Module):
         
         return torch.cat(valid_logits_seq, dim=0)
         
+    def change_teacher_force_rate(self, new_rate):
+        old_rate = self.teacher_force_rate
+        self.teacher_force_rate = new_rate
+        return old_rate
+        
     def greedy_decode(self, src_seq, sos, eos, unk, max_len=35):
         encoder_outputs, encoder_hidden = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
@@ -160,6 +165,9 @@ class Seq2Seq(nn.Module):
             else:
                 seq.append(prev_token.item())
         return seq
+        
+    def beam_decode(self, src_seq, sos, eos, unk, num_beam=10, max_len=35):
+        pass
         
     def save(self):
         torch.save(self.state_dict(), 'model.t7')
