@@ -15,11 +15,28 @@ def sub_slotmap(tokens, slot_map):
     for i in range(len(tokens)):
         if tokens[i] in slot_map:
             tokens[i] = slot_map[tokens[i]]['value']
+            
         elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
             slot = slot_map[tokens[i][1:-1]]
             quote = tokens[i][0]
             value = slot['value']
             tokens[i] = quote + value + quote
+            
+        elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
+            slot = slot_map[tokens[i][3:-3]]
+            quote = tokens[i][0:3]
+            value = slot['value']
+            tokens[i] = quote + value + quote
+            
+        # token = tokens[i]
+        # token = token.strip('\'').strip('\"')
+        # if token in slot_map:
+            # slot = slot_map[token]
+            # quote = slot['quote']
+            # if quote == '`':
+                # quote = ''
+            # value = slot['value']
+            # tokens[i] = quote + value + quote
             
     return ' '.join(tokens)
 
