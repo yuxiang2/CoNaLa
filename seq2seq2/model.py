@@ -139,7 +139,7 @@ class Seq2Seq(nn.Module):
         
         return torch.cat(valid_logits_seq, dim=0)
         
-    def greedy_decode(self, src_seq, sos, eos, max_len=50):
+    def greedy_decode(self, src_seq, sos, eos, unk, max_len=50):
         encoder_outputs, encoder_hidden = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
         context = torch.zeros(1, self.encoder_hidden_size)
@@ -153,7 +153,12 @@ class Seq2Seq(nn.Module):
             _, prev_token = torch.max(logits, 1)
             if prev_token == eos:
                 break
-            seq.append(prev_token.item())
+            if prev_token == unk:
+                _, best_2 = logits.topk(2, 1)
+                if best_2[0,1].item() != (sos, eos):
+                    seq.append(best_2[0,1].item())
+            else:
+                seq.append(prev_token.item())
         return seq
         
     def save(self):

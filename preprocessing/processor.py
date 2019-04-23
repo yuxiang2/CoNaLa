@@ -2,10 +2,13 @@ import json
 import pickle
 from .tokenizer import tokenize_intent, tokenize_code
 from collections import Counter
+import nltk
+
+lemmatizer = nltk.wordnet.WordNetLemmatizer()
 
 def process_intent(intent):
     intent, slot_map = tokenize_intent(intent)
-    intent = [e.lower() for e in intent]
+    intent = [lemmatizer.lemmatize(e.lower()) for e in intent]
     return intent, slot_map
 
 def sub_slotmap(tokens, slot_map):
@@ -205,9 +208,11 @@ class Code_Intent_Pairs():
             'word_pad': self.word2num['<pad>'],
             'word_sos': self.word2num['<sos>'],
             'word_eos': self.word2num['<eos>'],
+            'word_unk': self.word2num['<unk>'],
             'code_pad': self.code2num['<pad>'],
             'code_sos': self.code2num['<sos>'],
             'code_eos': self.code2num['<eos>'],
+            'code_unk': self.code2num['<unk>'],
         }
         
     def get_word_size(self):
