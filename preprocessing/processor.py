@@ -10,33 +10,27 @@ def process_intent(intent):
     intent, slot_map = tokenize_intent(intent)
     intent = [lemmatizer.lemmatize(e.lower()) for e in intent]
     return intent, slot_map
+    
+def replace_value(string):
+    return string.replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r').replace('\\', '\\\\')
 
 def sub_slotmap(tokens, slot_map):
     for i in range(len(tokens)):
         if tokens[i] in slot_map:
-            tokens[i] = slot_map[tokens[i]]['value']
+            value = slot_map[tokens[i]]['value']
+            tokens[i] = replace_value(value)
             
         elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
             slot = slot_map[tokens[i][1:-1]]
             quote = tokens[i][0]
             value = slot['value']
-            tokens[i] = quote + value + quote
+            tokens[i] = quote + replace_value(value) + quote
             
         elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
             slot = slot_map[tokens[i][3:-3]]
             quote = tokens[i][0:3]
             value = slot['value']
-            tokens[i] = quote + value + quote
-            
-        # token = tokens[i]
-        # token = token.strip('\'').strip('\"')
-        # if token in slot_map:
-            # slot = slot_map[token]
-            # quote = slot['quote']
-            # if quote == '`':
-                # quote = ''
-            # value = slot['value']
-            # tokens[i] = quote + value + quote
+            tokens[i] = quote + replace_value(value) + quote
             
     return ' '.join(tokens)
 

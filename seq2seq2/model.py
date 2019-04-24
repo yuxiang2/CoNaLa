@@ -51,6 +51,7 @@ class Attention(nn.Module):
         encoder_queries = encoder_queries.transpose(0,1).contiguous() # [bsize, leng, -1]
         decoder_query = self.decoder_transformer(decoder_hidden).unsqueeze(-1) # [bsize, -1, 1]
         attn_energy = torch.bmm(encoder_queries, decoder_query) # [bsize, leng, 1]
+        attn_energy = torch.tanh(attn_energy)
         
         ## add mask here, like add [0,0,,...-inf,inf] to the energy
         
