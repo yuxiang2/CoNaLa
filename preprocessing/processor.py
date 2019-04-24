@@ -1,6 +1,6 @@
 import json
 import pickle
-from .tokenizer import tokenize_intent, tokenize_code
+from tokenizer import tokenize_intent, tokenize_code
 from collections import Counter
 import nltk
 
@@ -12,7 +12,7 @@ def process_intent(intent):
     return intent, slot_map
     
 def replace_value(string):
-    return string.replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r').replace('\\', '\\\\')
+    return string.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r')
 
 def sub_slotmap(tokens, slot_map):
     for i in range(len(tokens)):

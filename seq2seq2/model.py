@@ -148,6 +148,8 @@ class Seq2Seq(nn.Module):
     def greedy_decode(self, src_seq, sos, eos, unk, max_len=35):
         encoder_outputs, encoder_hidden = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+        
+        # intialize some parameters
         context = torch.zeros(1, self.encoder_hidden_size)
         prev_token = torch.LongTensor([sos])
         hidden = None
@@ -167,8 +169,65 @@ class Seq2Seq(nn.Module):
                 seq.append(prev_token.item())
         return seq
         
-    def beam_decode(self, src_seq, sos, eos, unk, num_beam=10, max_len=35):
-        pass
+    def beam_decode(self, src_seq, sos, eos, unk, beam_width=10, max_len=36):
+    
+        import beam
+        from beam import Beam_path
+    
+        assert (beam_width > 2)
+        encoder_outputs, encoder_hidden = self.encoder(src_seq)
+        encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+
+        # intialize some parameters
+        context = torch.zeros(1, self.encoder_hidden_size)
+        prev_token = torch.LongTensor([sos])
+        hidden = None
+        bad_tokens = (sos, unk)
+        
+        def get_best_token(tokens, bad_tokens):
+            for token in tokens:
+                if token not in bad_tokens:
+                    return token
+        
+        # initial step
+        logits, hidden, context, _ = self.decoder(prev_token, hidden, 
+            encoder_outputs, encoder_outputs_reshaped, context)
+        p = torch.nn.functional.softmax(logits.view(-1), dim=0)
+        kp, greedy_kwords = torch.topk(p, beam_width)
+        klogp = torch.log(kp).tolist()
+        greedy_kwords = greedy_kwords.tolist()
+        best_word = get_best_token(greedy_kwords, bad_tokens)
+        
+        bestk_paths = []
+        for logp,init_word in zip(klogp,greedy_kwords):
+            if init_word in bad_tokens:
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context, best_word))
+            else:
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context))
+                
+        # steps after
+        for i in range(1, max_len):
+            new_paths = []
+            for beam_path in bestk_paths:
+                if beam_path.is_done():
+                    new_paths.append(beam_path)
+                    continue
+                prev_hidden = beam_path.prev_hidden
+                prev_word = torch.LongTensor([beam_path.prev_word])
+                prev_context = beam_path.prev_context
+                logits, hidden, context, _  = self.decoder\
+                (prev_word, prev_hidden, encoder_outputs, encoder_outputs_reshaped, prev_context)
+                p = torch.nn.functional.softmax(logits.view(-1), dim=0)
+                kp, greedy_kwords = torch.topk(p, beam_width)
+                klogp = torch.log(kp).tolist()
+                greedy_kwords = greedy_kwords.tolist()
+                best_word = get_best_token(greedy_kwords, bad_tokens)
+                new_paths.extend(beam_path.get_new_paths(greedy_kwords, bad_tokens, best_word, klogp, hidden, context))
+            
+            bestk_paths = Beam_path.get_bestk_paths(new_paths, beam_width)
+        
+        best_path = bestk_paths[-1]
+        return best_path.path[:-1]
         
     def save(self):
         torch.save(self.state_dict(), 'model.t7')
