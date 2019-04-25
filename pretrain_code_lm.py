@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 from preprocessing.processor import Code
 
 
-code_path = './language_model_corpus/test.txt'
+code_path = './language_model_corpus/train_code_lm.txt'
+# code_path = './language_model_corpus/test.txt'
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 code_lm_dir = './pretrain_code_lm'
@@ -21,8 +22,8 @@ if not os.path.exists(code_lm_dir):
 print("Saving models to {}".format(code_lm_dir))
 
 run_id = str(int(time.time()))
-maxEpochs = 20
-batchSize = 40
+maxEpochs = 8
+batchSize = 64
 trainLossPrintPeriod = 200
 lrDecayPeriod = 6
 lrGamma = 0.1
@@ -33,7 +34,7 @@ weightDecay = 1e-5
 # rnn parameters
 decoderContextSize   = 2
 decoderEmbeddingSize = 128
-decoderHiddenSize    = 512
+decoderHiddenSize    = 1024
 
 
 class CodeDataLoader(DataLoader):
@@ -135,8 +136,8 @@ class Decoder(nn.Module):
         assert (predictedCodeLen == batchCode.size()[1] - 2 * self.contextSize)
 
         batchCodeLength = list(map(lambda x: min(x - self.contextSize, predictedCodeLen), batchCodeLength))
-        batchCodeLength = tensor.LongTensor(batchCodeLength).to(DEVICE)
-        batchCodeMiddle = batchCode[:, self.contextSize : -self.contextSize]
+        batchCodeLength = torch.LongTensor(batchCodeLength).to(DEVICE)
+        batchCodeMiddle = batchCode[:, self.contextSize : -self.contextSize].contiguous()
 
         # calculate accuracy
         predictions = logits.view(batchSize * predictedCodeLen, -1).cpu().detach().argmax(dim=1).numpy()
@@ -163,6 +164,7 @@ class Decoder(nn.Module):
 def saveModel(decoder, run_id):
     embeddingPath = os.path.join(code_lm_dir, 'embedding-{}.t7'.format(run_id))
     torch.save((decoder.embedding).state_dict(), embeddingPath)
+    print("Saved model to {}".format(embeddingPath))
 
 
 def train(decoder, trainLoader, run_id='89757'):
