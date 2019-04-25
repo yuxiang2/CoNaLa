@@ -47,7 +47,7 @@ def sub_slotmap(tokens, slot_map):
         else:
             res += ' ' + token
         prev = token
-    return res
+    return res[1:]
 
 
 def tokenize_conala_entry(entry):
