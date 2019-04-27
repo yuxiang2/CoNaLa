@@ -4808,10 +4808,6 @@
     "code": "{{json.key1}}"
   },
   {
-    "intent": "remove duplicates from list `myset`",
-    "code": "mynewlist = list(myset)"
-  },
-  {
     "intent": "get unique values from the list `['a', 'b', 'c', 'd']`",
     "code": "set(['a', 'b', 'c', 'd'])"
   },
