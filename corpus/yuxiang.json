@@ -1,0 +1,486 @@
+[
+  {
+    "intent": "`a` plus `b`",
+    "code": "a + b"
+  },
+  {
+    "intent": "`a` add `b`",
+    "code": "a + b"
+  },
+  {
+    "intent": "round float `a` to nearest integer",
+    "code": "round(a)"
+  },
+  {
+    "intent": "truncate float `a` to an integer",
+    "code": "int(a)"
+  },
+  {
+    "intent": "`a` divide `b`",
+    "code": "a / b"
+  },
+  {
+    "intent": "floor division between `a` and `b`",
+    "code": "a // b"
+  },
+  {
+    "intent": "`a` times `b`",
+    "code": "a * b"
+  },
+  {
+    "intent": "raise `a` to its `b` th power",
+    "code": "a ** b"
+  },
+  {
+    "intent": "sqruare `a`",
+    "code": "a ** 2"
+  },
+  {
+    "intent": "cuba `a`",
+    "code": "a ** 3"
+  },
+  {
+    "intent": "round float `a` with 2 decimals",
+    "code": "round(a, 2)"
+  },
+  {
+    "intent": "combine two strings 'Hello' and 'world'",
+    "code": "'Hello' + 'world'"
+  },
+  {
+    "intent": "iterate characters in string 'hello world'",
+    "code": "for c in 'hello world':\\n\\t"
+  },
+  {
+    "intent": "iterate digits from 0 to 10",
+    "code": "for i in range(10):\\n\\t"
+  },
+  {
+    "intent": "iterate digits from 1 to 10",
+    "code": "for i in range(1, 10):\\n\\t"
+  },
+  {
+    "intent": "combine two lists '[1,2,3]' and '[4,5,6]'",
+    "code": "[1,2,3] + [4,5,6]"
+  },
+  {
+    "intent": "remove the `i` th element from a list `a`",
+    "code": "del a[i]"
+  },
+  {
+    "intent": "get the last element from a list `a`",
+    "code": "a[-1]"
+  },
+  {
+    "intent": "sort list `a`",
+    "code": "sorted(a)"
+  },
+  {
+    "intent": "sort list `a` in reverse order",
+    "code": "sorted(a, reverse=True)"
+  },
+  {
+    "intent": "infinite loop",
+    "code": "while True:\\n\\t"
+  },
+  {
+    "intent": "break a for loop which iterate from 0 to 10",
+    "code": "for i in range(10):\\n\\tbreak"
+  },
+  {
+    "intent": "swap the values of two variables `a` and `b`",
+    "code": "z = a\\na = b\\n b=z"
+  },
+  {
+    "intent": "get a list of keys from a dictionay 'my_dict'",
+    "code": "list(my_dict.keys())"
+  },
+  {
+    "intent": "get a list of values from a dictionay 'my_dict'",
+    "code": "list(my_dict.values())"
+  },
+  {
+    "intent": "repeat a string `a` 5 times",
+    "code": "a * 5"
+  },
+  {
+    "intent": "iterate elements from a list `a`",
+    "code": "for e in a:\\n\\t"
+  },
+  {
+    "intent": "take an input from the keyboard with prompt 'Please enter an integer'",
+    "code": "input('Please enter an integer')"
+  },
+  {
+    "intent": "convert a list of characters `a` into a string",
+    "code": "''.join(a)"
+  },
+  {
+    "intent": "join a list of words `a` into a string seperated by space",
+    "code": "' '.join(a)"
+  },
+  {
+    "intent": "join a list of words `a` into a string seperated by comma",
+    "code": "','.join(a)"
+  },
+  {
+    "intent": "build a 2d list of size 3 by 3 filled with 0s",
+    "code": "[[0] * 3] * 3"
+  },
+  {
+    "intent": "split a string '234,1234,345' by commas",
+    "code": "'234,1234,345'.split(',')"
+  },
+  {
+    "intent": "check a character `c` is a digit",
+    "code": "c.isdigit()"
+  },
+  {
+    "intent": "add an element `e` into a set `a`",
+    "code": "a.add(e)"
+  },
+  {
+    "intent": "sum a list of numbers `a`",
+    "code": "sum(a)"
+  },
+  {
+    "intent": "sum a list of list `a`",
+    "code": "sum(sum(x) for x in a)"
+  },
+  {
+    "intent": "remove punctuations from a string 'Hello, World!' and return a list of words",
+    "code": "re.compile('\\\\w+').findall('Hello, World!')"
+  },
+  {
+    "intent": "request url 'https://google.com/'",
+    "code": "requests.get('https://google.com/')"
+  },
+  {
+    "intent": "build a numpy array of size 3 by 4 filled with 0",
+    "code": "np.zeros(3,4)"
+  },
+  {
+    "intent": "build a numpy array of size 3 by 4 filled with 1",
+    "code": "np.ones(3,4)"
+  },
+  {
+    "intent": "sort a dictionary `my_dict` by its values",
+    "code": "sorted(my_dict.items(), key=lambda x:x[1])"
+  },
+  {
+    "intent": "convert a dictionary `my_dict` into a list of tuples",
+    "code": "list(my_dict.items())"
+  },
+  {
+    "intent": "open a file from path 'aaa.txt' with read mode",
+    "code": "open('aaa.txt', 'r')"
+  },
+  {
+    "intent": "read a file from path 'aaa.txt' line by line",
+    "code": "with open('aaa.txt', 'r') as f:\\n\\tfor line in f"
+  },
+  {
+    "intent": "read the content of a file from path 'aaa.txt'",
+    "code": "open('aaa.txt').read()"
+  },
+  {
+    "intent": "execute an os command 'xxx'",
+    "code": "os.system('xxx')"
+  },
+  {
+    "intent": "check an element `e` is in a set `a`",
+    "code": "e in a"
+  },
+  {
+    "intent": "check an element `e` is not in a set `a`",
+    "code": "e not in a"
+  },
+  {
+    "intent": "check an element `e` is in a string `a`",
+    "code": "e in a"
+  },
+  {
+    "intent": "check an element `e` is in a list `a`",
+    "code": "e in a"
+  },
+  {
+    "intent": "get all two element combinations of '[1,2,3]'",
+    "code": "[x for x in combinations([1,2,3], 2)]"
+  },
+  {
+    "intent": "matplotlib show a figure",
+    "code": "plt.show()"
+  },
+  {
+    "intent": "matplotlib draw a graph from two lists `a` and `b`",
+    "code": "plt.plot(a,b)"
+  },
+  {
+    "intent": "matplotlib give plot a title 'Graph'",
+    "code": "plt.title('Graph')"
+  },
+  {
+    "intent": "matplotlib give plot x label 'x-axis'",
+    "code": "plt.xlabel('x-axis')"
+  },
+  {
+    "intent": "matplotlib give plot y label 'y-axis'",
+    "code": "plt.ylabel('y-axis')"
+  },
+  {
+    "intent": "matplotlib create 4 by 4 subplots",
+    "code": "plt.subplots(4,4)"
+  },
+  {
+    "intent": "create a numpy array from list '[1,2,3]' and assign to `v`",
+    "code": "v = np.array([1,2,3])"
+  },
+  {
+    "intent": "create a numpy matrix from a 2d list '[[1,2,3],[4,5,6]]' and assign to `v`",
+    "code": "v = np.array([[1,2,3],[4,5,6]])"
+  },
+  {
+    "intent": "get the shape of numpy array `a`",
+    "code": "a.shape"
+  },
+  {
+    "intent": "reshape a numpy array `a` into shape 2 by 3",
+    "code": "a.reshape(2,3)"
+  },
+  {
+    "intent": "numpy matrix multiply between `a` and `b`",
+    "code": "np.matmul(a,b)"
+  },
+  {
+    "intent": "numpy transpose a matrix `a`",
+    "code": "a.T"
+  },
+  {
+    "intent": "create a random normal vector using numpy with mean equal to 0 and standard deviation to 1",
+    "code": "np.random.normal(0, 1)"
+  },
+  {
+    "intent": "create a random normal vector using numpy with mean equal to 0 and standard deviation to 1",
+    "code": "np.random.normal(loc=0, scale=1)"
+  },
+  {
+    "intent": "flatten a numpy array `a`",
+    "code": "a.reshape(-1)"
+  },
+  {
+    "intent": "use panda to read a csv file 'file.csv' and assign to `df`",
+    "code": "df = pandas.read_csv('file.csv')"
+  },
+  {
+    "intent": "extract column 'A' from dataframe `df` using panda",
+    "code": "df['A']"
+  },
+  {
+    "intent": "extract 2 columns 'A' and 'B' from dataframe `df` using panda",
+    "code": "df['A', 'B']"
+  },
+  {
+    "intent": "turn a panda dataframe `df` into a numpy array",
+    "code": "np.array(df)"
+  },
+  {
+    "intent": "see the first few rows of data in a dataframe `df`",
+    "code": "df.head()"
+  },
+  {
+    "intent": "build a panda frame from a numpy list `a` with column names '[col1, col2]'",
+    "code": "panda.DataFrame(a, columns=[col1, col2])"
+  },
+  {
+    "intent": "calculate a dataframe `df` of its average of feature 'age' group by feature 'gender'",
+    "code": "df.groupby('gender')['age'].mean()"
+  },
+  {
+    "intent": "plot a box graph of feature 'height' of a dataframe `df`",
+    "code": "df['height'].plot(king='box')"
+  },
+  {
+    "intent": "convert categorical variables in dataframe `df` into multiple binary variables",
+    "code": "pd.get_dummies(df['category'], prefix=prefixToColumnName)"
+  },
+  {
+    "intent": "panda concatenate a column 'newcolumn' to a dataframe `df`",
+    "code": "pd.concat([df, newcolumn], axis=1)"
+  },
+  {
+    "intent": "panda drop a column 'col1' from a dataframe `df`",
+    "code": "df,_ = df.drop(['col1'], axis=1)"
+  },
+  {
+    "intent": "panda drop columns 'col1' and 'col2' from a dataframe `df`",
+    "code": "df,_ = df.drop(['col1','col2'], axis=1)"
+  },
+  {
+    "intent": "convert string 'my_str' into lower case",
+    "code": "my_str.lower()"
+  },
+  {
+    "intent": "sum a numpy array `a`",
+    "code": "np.sum(a)"
+  },
+  {
+    "intent": "average a numpy array `a`",
+    "code": "np.mean(a)"
+  },
+  {
+    "intent": "numpy create zeros of the same shape as numpy array `a`",
+    "code": "np.zeros_like(a)"
+  },
+  {
+    "intent": "find the maximum of a numpy array `a`",
+    "code": "np.max(a)"
+  },
+  {
+    "intent": "find the minimum of a numpy array `a`",
+    "code": "np.min(a)"
+  },
+  {
+    "intent": "find the position of the maximum element in a numpy array `a`",
+    "code": "np.argmax(a)"
+  },
+  {
+    "intent": "find the position of the minimum element in a numpy array `a`",
+    "code": "np.argmin(a)"
+  },
+  {
+    "intent": "numpy repeat a numpy array `a` `2` times along the first axis",
+    "code": "np.repeat(a, 2, 1)"
+  },
+  {
+    "intent": "numpy element wise square root of `a`",
+    "code": "np.sqrt(a)"
+  },
+  {
+    "intent": "remove duplicate elements from a list 'my_list'",
+    "code": "list(set(my_list))"
+  },
+  {
+    "intent": "get the current data and time",
+    "code": "datatime.datetime.now()"
+  },
+  {
+    "intent": "get the last element of a list `a` and remove that element",
+    "code": "a.pop()"
+  },
+  {
+    "intent": "pop the last element from a list `a`",
+    "code": "a.pop()"
+  },
+  {
+    "intent": "apply function `f` to each of element in list `my_list` and return a list",
+    "code": "list(map(f, my_list))"
+  },
+  {
+    "intent": "count each element in a list `a`",
+    "code": "Counter(a)"
+  },
+  {
+    "intent": "get the number of elements in a set `a`",
+    "code": "len(a)"
+  },
+  {
+    "intent": "get the number of elements in a list `a`",
+    "code": "len(a)"
+  },
+  {
+    "intent": "convert a list of float `float_list` into integer",
+    "code": "[int(i) for i in float_list]"
+  },
+  {
+    "intent": "convert a list of integer `int_list` into float",
+    "code": "[float(i) for i in int_list]"
+  },
+  {
+    "intent": "quit program with code 0",
+    "code": "sys.exit(0)"
+  },
+  {
+    "intent": "assert `a` equals to `b`",
+    "code": "assert(a == b)"
+  },
+  {
+    "intent": "assert `a` and `b` have the same length",
+    "code": "assert(len(a) == len(b))"
+  },
+  {
+    "intent": "open a file from path 'file.txt' in write mode",
+    "code": "open('file.txt', 'w'): \\n"
+  },
+  {
+    "intent": "open a file from path 'file.txt' in write mode",
+    "code": "with open('file.txt', 'w')as f:\\n"
+  },
+  {
+    "intent": "kill process '4497'",
+    "code": "os.kill(4497, signal.SIGKILL)"
+  },
+  {
+    "intent": "stop process '4497'",
+    "code": "os.kill(4497, signal.SIGINT)"
+  },
+  {
+    "intent": "send signal SIGKILL to process 4497",
+    "code": "os.kill(4497, signal.SIGKILL)"
+  },
+  {
+    "intent": "send signal SIGINT to process 4497",
+    "code": "os.kill(4497, signal.SIGINT)"
+  },
+  {
+    "intent": "open a file from path 'file.txt' in append mode",
+    "code": "open('file.txt', 'a'): \\n"
+  },
+  {
+    "intent": "convert ascii character 'a' to int",
+    "code": "ord('a')"
+  },
+  {
+    "intent": "cap all elements to be at most 5 in a list `a`",
+    "code": "[e if e < 5 else 5 for e in a]"
+  },
+  {
+    "intent": "get a random float number from 0 to 1",
+    "code": "random.random()"
+  },
+  {
+    "intent": "get a random float number from 4 to 5",
+    "code": "4 + random.random()"
+  },
+  {
+    "intent": "get a random float number from 4 to 6",
+    "code": "4 + (6 - 4) * random.random()"
+  },
+  {
+    "intent": "get a random integer from 0 to 10",
+    "code": "random.randint(0, 10)"
+  },
+  {
+    "intent": "check key `k` is in dictionary `my_dict`",
+    "code": "k in my_dict"
+  },
+  {
+    "intent": "check key `k` is not in dictionary `my_dict`",
+    "code": "k not in my_dict"
+  },
+  {
+    "intent": "create a tuple from two lists `x` and `y`",
+    "code": "tuple(zip(x,y))"
+  },
+  {
+    "intent": "list `a` combine list `b` save the change to list `a`",
+    "code": "a.extend(b)"
+  },
+  {
+    "intent": "insert element `k` to position 2 in list `a`",
+    "code": "a.insert(2, k)"
+  },
+  {
+    "intent": "print \t",
+    "code": "print('\\t')"
+  }
+]
