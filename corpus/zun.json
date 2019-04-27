@@ -1,0 +1,210 @@
+[
+  {
+    "intent": "limit float `a` to two decimal points",
+    "code": "'{0:.2f}'.format(a)"
+  },
+  {
+    "intent": "limit float 13.95 to two decimal points",
+    "code": "float('{0:.2f}'.format(13.95))"
+  },
+  {
+    "intent": "print float `a` with two decimal points",
+    "code": "print(('{0:.2f}'.format(a)))"
+  },
+  {
+    "intent": "remove all duplicate items from a list `lst`",
+    "code": "list(set(lst))"
+  },
+  {
+    "intent": "get the sum of each  value from a list `lst`",
+    "code": "sum(x for x in lst)"
+  },
+  {
+    "intent": "get the sum of each first value from a list of tuple `lst`",
+    "code": "sum(x[0] for x in structure)"
+  },
+  {
+    "intent": "get the sum of each third value from a list of tuple `lst`",
+    "code": "sum(x[2] for x in structure)"
+  },
+  {
+    "intent": "get  current directory",
+    "code": "os.path.abspath(__file__)"
+  },
+  {
+    "intent": "sort a list `s` in reverse order",
+    "code": "s = sorted(s, reverse=True)"
+  },
+  {
+    "intent": "sort a list `s` by the first attribute",
+    "code": "s = sorted(s, key=lambda x: x[0])"
+  },
+  {
+    "intent": "sort a list `s` by the first and second attributes in reverse order",
+    "code": "s = sorted(s, key=lambda x: (x[0], x[1]), reverse=True)"
+  },
+  {
+    "intent": "sort a list of items",
+    "code": "list.sort()"
+  },
+  {
+    "intent": "sort a list of items in reverse order",
+    "code": "list.sort(reverse=True)"
+  },
+  {
+    "intent": "Truncate `\\r\\n` from a string `s`",
+    "code": "s.replace('\\r\\n', '')"
+  },
+  {
+    "intent": "python, format string \"{}\" to have 'foo' in the first positions",
+    "code": "\"{}\".format('foo')"
+  },
+  {
+    "intent": "Get all matching patterns 'a' from a string `s`",
+    "code": "re.findall('(?=(a))', s)"
+  },
+  {
+    "intent": "limit float `a` to two decimal points",
+    "code": "('%.2f' % a)"
+  },
+  {
+    "intent": "limit float `a` to two decimal points",
+    "code": "float(('%.2f' % a))"
+  },
+  {
+    "intent": "print float `a` with two decimal points",
+    "code": "print(('%.2f' % a))"
+  },
+  {
+    "intent": "limit float `a` to three decimal points",
+    "code": "'{0:.3f}'.format(a)"
+  },
+  {
+    "intent": "limit float `a` to one decimal points",
+    "code": "'{0:.1f}'.format(a)"
+  },
+  {
+    "intent": "execute a file './abc.py'",
+    "code": "subprocess.call(['./abc.py'])"
+  },
+  {
+    "intent": "execute a file './abc.py' with arguments `arg1` in python shell",
+    "code": "subprocess.call(['./abc.py', arg1])"
+  },
+  {
+    "intent": "get current time",
+    "code": "t = datetime.datetime.now()"
+  },
+  {
+    "intent": "substract 1 hour and 10 minutes from time `t`",
+    "code": "(t - datetime.timedelta(hours=1, minutes=10))"
+  },
+  {
+    "intent": "Call an external command `c`",
+    "code": "os.system(c)"
+  },
+  {
+    "intent": "get the type of a variable `a`",
+    "code": "type(a)"
+  },
+  {
+    "intent": "convert a variable `a` to string",
+    "code": "str(a)"
+  },
+  {
+    "intent": "convert a variable `a` to list",
+    "code": "list(a)"
+  },
+  {
+    "intent": "convert a list `lst` to a list of integers",
+    "code": "list(map(int, lst))"
+  },
+  {
+    "intent": "create a zero numpy array of shape `(6, 9, 20)`",
+    "code": "np.zeros((6, 9, 20))"
+  },
+  {
+    "intent": "create a numpy array of all ones of shape `(1, 2)`",
+    "code": "np.zeros((1, 2))"
+  },
+  {
+    "intent": "reshape a numpy array `a` into `(1, 9, 1)`",
+    "code": "a.reshape((1, 9, 1))"
+  },
+  {
+    "intent": "get the shape of a numpy array `a`",
+    "code": "a.shape()"
+  },
+  {
+    "intent": "convert a list `lst` into a numpy array",
+    "code": "np.array(lst)"
+  },
+  {
+    "intent": "Get the average values from a numpy array `a`",
+    "code": "np.mean(a)"
+  },
+  {
+    "intent": "Get the average values from two numpy arrays `a0` and `a1`",
+    "code": "np.mean(np.array([a0, a1]))"
+  },
+  {
+    "intent": "Join a list of strings 'lst' with ''",
+    "code": "''.join(lst)"
+  },
+  {
+    "intent": "kill a process with id `i`",
+    "code": "os.kill(i, signal.SIGKILL)"
+  },
+  {
+    "intent": "Get pandas dataframe `df` column 'a'",
+    "code": "df['a']"
+  },
+  {
+    "intent": "Get pandas dataframe `df` column 'a'",
+    "code": "df['a'].values"
+  },
+  {
+    "intent": "Sort a structured numpy array 'df' on column 'c'",
+    "code": "df.sort(['c'])"
+  },
+  {
+    "intent": "Sort a structured numpy array 'df' on multiple columns 'c0' and 'c1'",
+    "code": "df.sort(['c0', 'c1'])"
+  },
+  {
+    "intent": "open a file `f`",
+    "code": "open(f)"
+  },
+  {
+    "intent": "open a file `f`",
+    "code": "open(f).read()"
+  },
+  {
+    "intent": "open a file `f` with utf-8 bom header",
+    "code": "open(f).read().decode('utf-8-sig')"
+  },
+  {
+    "intent": "load json file 'sample.json'",
+    "code": "json.loads(open('sample.json').read())"
+  },
+  {
+    "intent": "split string `s` on regular expression `r`",
+    "code": "re.split(r, s)"
+  },
+  {
+    "intent": "python split string `s` based on regular expression `r`",
+    "code": "re.findall(r, s)"
+  },
+  {
+    "intent": "remove leading and trailing `c` in the string `s`",
+    "code": "s.strip(c)"
+  },
+  {
+    "intent": "Serialize dictionary `data` to a JSON formatted string",
+    "code": "json.dumps(data)"
+  },
+  {
+    "intent": "replace value `v` in any column of pandas dataframe to `s`",
+    "code": "df.replace(v, s)"
+  }
+]
