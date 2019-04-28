@@ -8,23 +8,203 @@
     "code": "int(x)"
   },
   {
-    "intent": "check if string b is a digit number",
+    "intent": "check if string 'b' is a digit number",
     "code": "b.isdigit()"
   },
   {
-    "intent": "reverse a string s",
+    "intent": "reverse a string 's'",
     "code": "s[::-1]"
   },
   {
-    "intent": "shuffle a list l",
+    "intent": "shuffle a list 'l'",
     "code": "shuffle(l)"
   },
   {
-    "intent": "print 'Hello, World'",
-    "code": "print('Hello, World!')"
+    "intent": "append a list 'x' with number 4",
+    "code": "x.append(4)"
   },
   {
-    "intent": "print 'Hello, World'",
-    "code": "print('Hello, World!')"
+    "intent": "extend a list 'x' with [4, 5]",
+    "code": "x.extend([4, 5])"
+  },
+  {
+    "intent": "reverse a string 's'",
+    "code": "s[::-1]"
+  },
+  {
+    "intent": "shuffle a list 'l'",
+    "code": "shuffle(l)"
+  },
+  {
+    "intent": "append a list 'x' with number 4",
+    "code": "x.append(4)"
+  },
+  {
+    "intent": "split a 'txt'",
+    "code": "txt.split()"
+  },
+  {
+    "intent": "split a 'txt' with ','",
+    "code": "txt.split(',')"
+  },
+  {
+    "intent": "double every number in a list 'mylist'",
+    "code": "mylist = [x*2 for x in mylist]"
+  },
+  {
+    "intent": "remove 'Volvo' in 'cars'",
+    "code": "cars.remove('Volvo')"
+  },
+  {
+    "intent": "return a copy of list 'fruits'",
+    "code": "return fruits.copy()"
+  },
+  {
+    "intent": "get iterator of mytuple",
+    "code": "myit = iter(mytuple)"
+  },
+  {
+    "intent": "get next element from iterator 'myit'",
+    "code": "next(myit)"
+  },
+  {
+    "intent": "delete variable 'a'",
+    "code": "del a"
+  },
+  {
+    "intent": "open a file 'workfile' for write",
+    "code": "f = open('workfile', 'w')"
+  },
+  {
+    "intent": "open a file 'workfile' for read",
+    "code": "f = open('workfile', 'r')"
+  },
+  {
+    "intent": "close file",
+    "code": "f.close()"
+  },
+  {
+    "intent": "read one line of file",
+    "code": "f.readline()"
+  },
+  {
+    "intent": "convert value to string",
+    "code": "s = str(value)"
+  },
+  {
+    "intent": "write 's' to file",
+    "code": "f.write(s)"
+  },
+  {
+    "intent": "write '[1, 'simple', 'list']' to json",
+    "code": "json.dumps([1, 'simple', 'list'])"
+  },
+  {
+    "intent": "load json file 'f' to 'x'",
+    "code": "x = json.load(f)"
+  },
+  {
+    "intent": "Return the current working directory",
+    "code": "os.getcwd()"
+  },
+  {
+    "intent": "Run the command 'mkdir today' in the system shell",
+    "code": "os.system('mkdir today')"
+  },
+  {
+    "intent": "get arguments from sys module",
+    "code": "sys.argv"
+  },
+  {
+    "intent": "get mean of data",
+    "code": "statistics.mean(data)"
+  },
+  {
+    "intent": "Create a deep copy of 'a'",
+    "code": "b = a.copy() "
+  },
+  {
+    "intent": "shape of 'a'",
+    "code": "a.shape"
+  },
+  {
+    "intent": "reshape a of size (3,2) to 'b'",
+    "code": "b = a.reshape(3,2) "
+  },
+  {
+    "intent": "flatten array a",
+    "code": "a.ravel()"
+  },
+  {
+    "intent": "generate a random matrix of '(2,2)'",
+    "code": "np.random.random((2,2))"
+  },
+  {
+    "intent": "generate a numpy array of 12 and reshape it into (3,4)",
+    "code": "a = np.arange(12).reshape(3,4)"
+  },
+  {
+    "intent": "transpose a matrix 'a'",
+    "code": "a.transpose()"
+  },
+  {
+    "intent": "sum of each column of 'b'",
+    "code": "b.sum(axis=0) "
+  },
+  {
+    "intent": "min of each row of 'b'",
+    "code": "b.min(axis=1)"
+  },
+  {
+    "intent": "get sqrt of numpy array 'B'",
+    "code": "np.sqrt(B)"
+  },
+  {
+    "intent": "get data tpye of 'a'",
+    "code": "a.dtype.name"
+  },
+  {
+    "intent": "pad a with constant number of '(2,3)'",
+    "code": "np.pad(a, (2,3), 'constant')"
+  },
+  {
+    "intent": "create a socket object",
+    "code": "s = socket.socket()"
+  },
+  {
+    "intent": "Get local machine name",
+    "code": "host = socket.gethostname()"
+  },
+  {
+    "intent": "get current time",
+    "code": "time.time()"
+  },
+  {
+    "intent": "rename 'current_name' to 'new_name'",
+    "code": "os.rename(current_name, new_name)"
+  },
+  {
+    "intent": "create a directory 'test'",
+    "code": "os.mkdir('test')"
+  },
+  {
+    "intent": "get number in index 2 in 'myList'",
+    "code": "myList[2]"
+  },
+  {
+    "intent": "get maximum number in 'myList'",
+    "code": "max(myList)"
+  },
+  {
+    "intent": "count of how many times obj occurs in list",
+    "code": "list.count(obj)"
+  },
+  {
+    "intent": "removes and returns last object or obj from list",
+    "code": "list.pop(obj=list[-1])"
+  },
+  {
+    "intent": "returns the lowest index in list that obj appears",
+    "code": "list.index(obj)"
   }
 ]
