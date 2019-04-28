@@ -1,0 +1,30 @@
+[
+  {
+    "intent": "print 'Hello, World'",
+    "code": "print('Hello, World!')"
+  },
+  {
+    "intent": "cast variable 'x' to int",
+    "code": "int(x)"
+  },
+  {
+    "intent": "check if string b is a digit number",
+    "code": "b.isdigit()"
+  },
+  {
+    "intent": "reverse a string s",
+    "code": "s[::-1]"
+  },
+  {
+    "intent": "shuffle a list l",
+    "code": "shuffle(l)"
+  },
+  {
+    "intent": "print 'Hello, World'",
+    "code": "print('Hello, World!')"
+  },
+  {
+    "intent": "print 'Hello, World'",
+    "code": "print('Hello, World!')"
+  }
+]
