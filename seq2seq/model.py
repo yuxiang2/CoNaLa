@@ -31,7 +31,7 @@ class Encoder(nn.Module):
         # sum bidirectional outputs
         outputs = (outputs[:, :, :self.hidden_size] +
                    outputs[:, :, self.hidden_size:])
-        return outputs, hidden
+        return outputs, output_lengths, hidden
 
         
 class Attention(nn.Module):
@@ -43,20 +43,23 @@ class Attention(nn.Module):
         
         self.encoder_transformer = nn.Linear(encoder_hidden_size,attn_hidden_size)
         self.decoder_transformer = nn.Linear(decoder_hidden_size,attn_hidden_size)
+        self.encoder_queries = None
         
-    def forward(self, encoder_outputs, decoder_hidden):
+    def forward(self, decoder_hidden, encoder_mask=None):
+        decoder_query = self.decoder_transformer(decoder_hidden).unsqueeze(-1) # [bsize, -1, 1]
+        attn_energy = torch.bmm(self.encoder_queries, decoder_query) # [bsize, leng, 1]
+        attn_energy = torch.tanh(attn_energy)
+        if encoder_mask is None:
+            return softmax(attn_energy, dim=1)
+        
+        attn_energy_masked = attn_energy + encoder_mask.unsqueeze(-1)
+        return softmax(attn_energy_masked, dim=1)
+    
+    def get_encoder_queries(self, encoder_outputs):
         leng, bsize, _ = encoder_outputs.size()
         encoder_outputs_flatten = encoder_outputs.view(leng * bsize, -1)
         encoder_queries = self.encoder_transformer(encoder_outputs_flatten).view(leng, bsize, -1)
-        encoder_queries = encoder_queries.transpose(0,1).contiguous() # [bsize, leng, -1]
-        decoder_query = self.decoder_transformer(decoder_hidden).unsqueeze(-1) # [bsize, -1, 1]
-        attn_energy = torch.bmm(encoder_queries, decoder_query) # [bsize, leng, 1]
-        attn_energy = torch.tanh(attn_energy)
-        
-        ## add mask here, like add [0,0,,...-inf,inf] to the energy
-        
-        return softmax(attn_energy, dim=1)
-        
+        self.encoder_queries = encoder_queries.transpose(0,1).contiguous() # [bsize, leng, -1]
 
 class Decoder(nn.Module):
     def __init__(self, code_size, hyperP):
@@ -76,12 +79,11 @@ class Decoder(nn.Module):
         self.gru = nn.GRU(encoder_hidden_size + embed_size, hidden_size,
                           n_layers, dropout=dropout)
         self.linear = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size * 2),
-            nn.ReLU(True),
-            nn.Linear(hidden_size * 2, code_size)
+            nn.Linear(encoder_hidden_size + hidden_size, code_size)
         )
 
-    def forward(self, prev_token, last_hidden, encoder_outputs, encoder_outputs_reshaped, context):
+    def forward(self, prev_token, last_hidden, encoder_outputs_reshaped,
+                context, encoder_mask=None):
         # Get the embedding of the current input word or last predicted word
         embedded = self.embed(prev_token).unsqueeze(0)  # (1,B,N)
         
@@ -92,7 +94,7 @@ class Decoder(nn.Module):
         outputs = outputs.squeeze(0)  # (1,B,N) -> (B,N)
         
         # Calculate attention weights and context vector
-        attn_weights = self.attention(encoder_outputs, hidden[-1])
+        attn_weights = self.attention(hidden[-1], encoder_mask)
         context = torch.bmm(encoder_outputs_reshaped, attn_weights)  # (B,N,1)
         context = context.squeeze(2) # (B,N)
         
@@ -114,18 +116,25 @@ class Seq2Seq(nn.Module):
 
     def forward(self, src_seq, trgt_seq, out_lens):
         batch_size = len(src_seq)
-        encoder_outputs, encoder_hidden = self.encoder(src_seq)
+        encoder_outputs, encoder_valid_lengths, _ = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+        
+        self.decoder.attention.get_encoder_queries(encoder_outputs)
         
         ## initialize some parameters for decoder
         context = torch.zeros(batch_size, self.encoder_hidden_size)
         prev_token = trgt_seq[:,0]
         hidden = None
         
+        encoder_max_len = encoder_outputs.size(0)
+        encoder_mask = torch.zeros(batch_size, encoder_max_len)
+        for i,length in enumerate(encoder_valid_lengths):
+            encoder_mask[i, length:] = -999.99
+            
         logits_seqs = []
         for t in range(1, len(trgt_seq[0])):
             logits, hidden, context, _ = self.decoder(prev_token, hidden, 
-                encoder_outputs, encoder_outputs_reshaped, context)
+                encoder_outputs_reshaped, context, encoder_mask)
             if random.random() < self.teacher_force_rate:
                 prev_token = trgt_seq[:,t]
             else:
@@ -146,8 +155,9 @@ class Seq2Seq(nn.Module):
         return old_rate
         
     def greedy_decode(self, src_seq, sos, eos, unk, max_len=35):
-        encoder_outputs, encoder_hidden = self.encoder(src_seq)
+        encoder_outputs, _, _ = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+        self.decoder.attention.get_encoder_queries(encoder_outputs)
         
         # intialize some parameters
         context = torch.zeros(1, self.encoder_hidden_size)
@@ -157,7 +167,7 @@ class Seq2Seq(nn.Module):
         seq = []
         for t in range(max_len):
             logits, hidden, context, _ = self.decoder(prev_token, hidden, 
-                encoder_outputs, encoder_outputs_reshaped, context)
+                encoder_outputs_reshaped, context)
             _, prev_token = torch.max(logits, 1)
             if prev_token == eos:
                 break
@@ -175,8 +185,9 @@ class Seq2Seq(nn.Module):
         from beam import Beam_path
     
         assert (beam_width > 2)
-        encoder_outputs, encoder_hidden = self.encoder(src_seq)
+        encoder_outputs, _, _ = self.encoder(src_seq)
         encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+        self.decoder.attention.get_encoder_queries(encoder_outputs)
 
         # intialize some parameters
         context = torch.zeros(1, self.encoder_hidden_size)
@@ -191,7 +202,7 @@ class Seq2Seq(nn.Module):
         
         # initial step
         logits, hidden, context, _ = self.decoder(prev_token, hidden, 
-            encoder_outputs, encoder_outputs_reshaped, context)
+            encoder_outputs_reshaped, context)
         p = torch.nn.functional.softmax(logits.view(-1), dim=0)
         kp, greedy_kwords = torch.topk(p, beam_width)
         klogp = torch.log(kp).tolist()
@@ -216,7 +227,7 @@ class Seq2Seq(nn.Module):
                 prev_word = torch.LongTensor([beam_path.prev_word])
                 prev_context = beam_path.prev_context
                 logits, hidden, context, _  = self.decoder\
-                (prev_word, prev_hidden, encoder_outputs, encoder_outputs_reshaped, prev_context)
+                (prev_word, prev_hidden, encoder_outputs_reshaped, prev_context)
                 p = torch.nn.functional.softmax(logits.view(-1), dim=0)
                 kp, greedy_kwords = torch.topk(p, beam_width)
                 klogp = torch.log(kp).tolist()

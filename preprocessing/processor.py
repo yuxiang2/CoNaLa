@@ -12,42 +12,56 @@ def process_intent(intent):
     intent = [lemmatizer.lemmatize(e.lower()) for e in intent]
     return intent, slot_map
 
-
-def replace_value(string):
-    return string.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r')
-
-
 def sub_slotmap(tokens, slot_map):
+    # replace slot maps
     for i in range(len(tokens)):
         if tokens[i] in slot_map:
-            value = slot_map[tokens[i]]['value']
-            tokens[i] = replace_value(value)
+            value = slot_map[tokens[i]]
+            tokens[i] = value
 
         elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
-            slot = slot_map[tokens[i][1:-1]]
+            value = slot_map[tokens[i][1:-1]]
             quote = tokens[i][0]
-            value = slot['value']
-            tokens[i] = quote + replace_value(value) + quote
+            tokens[i] = quote + value + quote
 
         elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
-            slot = slot_map[tokens[i][3:-3]]
+            value = slot_map[tokens[i][3:-3]]
             quote = tokens[i][0:3]
-            value = slot['value']
-            tokens[i] = quote + replace_value(value) + quote
-    res = ''
-    prev = ''
-    non_space_set = {'.', '(', ')'}
-    for token in tokens:
-        if prev is ')' and token not in non_space_set:
-            res += ' ' + token
-        elif token in non_space_set or prev in non_space_set:
-            res += token
-        elif token is '.' or prev is '.':
-            res += token
-        else:
-            res += ' ' + token
-        prev = token
-    return res[1:]
+            tokens[i] = quote + value + quote
+            
+    return ' '.join(tokens)
+    # remove spaces between digits:
+    #     new_tokens = []
+    #     num_list = []
+    #     for token in tokens:
+    #         if token.isdigit():
+    #             num_list.append(token)
+    #         else:
+    #             if len(num_list) != 0:
+    #                 num = ''.join(num_list)
+    #                 num_list = []
+    #                 new_tokens.append(num)
+    #             new_tokens.append(token)
+    #     if len(num_list) != 0:
+    #         num = ''.join(num_list)
+    #         new_tokens.append(num)
+
+    #     return ' '.join(new_tokens)
+            
+#     res = ''
+#     prev = ''
+#     non_space_set = {'.', '(', ')'}
+#     for token in new_tokens:
+#         if prev is ')' and token not in non_space_set:
+#             res += ' ' + token
+#         elif token in non_space_set or prev in non_space_set:
+#             res += token
+#         elif token is '.' or prev is '.':
+#             res += token
+#         else:
+#             res += ' ' + token
+#         prev = token
+#     return res[1:]
 
 
 def tokenize_conala_entry(entry):
@@ -125,7 +139,7 @@ class Code_Intent_Pairs():
             return [num2code[idx] for idx in idxes]
 
     def get_dict_from_raw(self, path=None, word_cut_freq=5, code_cut_freq=3, copy=True, store=True):
-        raw_entries = get_raw_entries()
+        raw_entries = get_raw_entries(path)
         intents, codes, slot_maps = zip(*list(map(tokenize_conala_entry, raw_entries)))
 
         def get_vocab(sentences, cut_freq):
