@@ -76,23 +76,16 @@ class Decoder(nn.Module):
             nn.Dropout(dropout, inplace=True)
         )
         self.attention = Attention(hyperP)
-        self.gru = nn.GRU(encoder_hidden_size + embed_size, hidden_size,
-                          n_layers, dropout=dropout)
-        self.linear = nn.Sequential(
-            nn.Linear(encoder_hidden_size + hidden_size, encoder_hidden_size + hidden_size),
-            nn.ReLU(),
-            nn.Linear(encoder_hidden_size + hidden_size, code_size),
-        )
+        self.gru = nn.GRU(embed_size, hidden_size, n_layers, dropout=dropout)
+        self.linear = nn.Linear(encoder_hidden_size + hidden_size, code_size)
 
     def forward(self, prev_token, last_hidden, encoder_outputs_reshaped,
-                context, encoder_mask=None):
+                encoder_mask=None):
         # Get the embedding of the current input word or last predicted word
         embedded = self.embed(prev_token).unsqueeze(0)  # (1,B,N)
         
         # Combine embedded input word and attended context, run through RNN
-        context = context.unsqueeze(0) # (1,B,N)
-        rnn_input = torch.cat([embedded, context], 2)
-        outputs, hidden = self.gru(rnn_input, last_hidden)
+        outputs, hidden = self.gru(embedded, last_hidden)
         outputs = outputs.squeeze(0)  # (1,B,N) -> (B,N)
         
         # Calculate attention weights and context vector
@@ -103,7 +96,7 @@ class Decoder(nn.Module):
         # Get output logits
         outputs = torch.cat((outputs, context), dim=1) #(B, 2N)
         logits = self.linear(outputs)
-        return logits, hidden, context, attn_weights
+        return logits, hidden, attn_weights
 
 
 class Seq2Seq(nn.Module):
@@ -124,7 +117,6 @@ class Seq2Seq(nn.Module):
         self.decoder.attention.get_encoder_queries(encoder_outputs)
         
         ## initialize some parameters for decoder
-        context = torch.zeros(batch_size, self.encoder_hidden_size)
         prev_token = trgt_seq[:,0]
         hidden = None
         
@@ -135,8 +127,8 @@ class Seq2Seq(nn.Module):
             
         logits_seqs = []
         for t in range(1, len(trgt_seq[0])):
-            logits, hidden, context, _ = self.decoder(prev_token, hidden, 
-                encoder_outputs_reshaped, context, encoder_mask)
+            logits, hidden, _ = self.decoder(prev_token, hidden, 
+                encoder_outputs_reshaped, encoder_mask)
             if random.random() < self.teacher_force_rate:
                 prev_token = trgt_seq[:,t]
             else:
@@ -162,14 +154,13 @@ class Seq2Seq(nn.Module):
         self.decoder.attention.get_encoder_queries(encoder_outputs)
         
         # intialize some parameters
-        context = torch.zeros(1, self.encoder_hidden_size)
         prev_token = torch.LongTensor([sos])
         hidden = None
         
         seq = []
         for t in range(max_len):
-            logits, hidden, context, _ = self.decoder(prev_token, hidden, 
-                encoder_outputs_reshaped, context)
+            logits, hidden, _ = self.decoder(prev_token, hidden, 
+                encoder_outputs_reshaped)
             _, prev_token = torch.max(logits, 1)
             if prev_token == eos:
                 break
@@ -180,6 +171,65 @@ class Seq2Seq(nn.Module):
             else:
                 seq.append(prev_token.item())
         return seq
+        
+    def beam_decode(self, src_seq, sos, eos, unk, beam_width=10, max_len=36):
+    
+        import beam
+        from beam import Beam_path
+    
+        assert (beam_width > 2)
+        encoder_outputs, _, _ = self.encoder(src_seq)
+        encoder_outputs_reshaped = encoder_outputs.permute(1, 2, 0).contiguous()
+        self.decoder.attention.get_encoder_queries(encoder_outputs)
+
+        # intialize some parameters
+        prev_token = torch.LongTensor([sos])
+        hidden = None
+        bad_tokens = (sos, unk)
+        
+        def get_best_token(tokens, bad_tokens):
+            for token in tokens:
+                if token not in bad_tokens:
+                    return token
+        
+        # initial step
+        logits, hidden, _ = self.decoder(prev_token, hidden, 
+            encoder_outputs_reshaped)
+        p = torch.nn.functional.softmax(logits.view(-1), dim=0)
+        kp, greedy_kwords = torch.topk(p, beam_width)
+        klogp = torch.log(kp).tolist()
+        greedy_kwords = greedy_kwords.tolist()
+        best_word = get_best_token(greedy_kwords, bad_tokens)
+        
+        bestk_paths = []
+        for logp,init_word in zip(klogp,greedy_kwords):
+            if init_word in bad_tokens:
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, None, best_word))
+            else:
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, None))
+                
+        # steps after
+        for i in range(1, max_len):
+            new_paths = []
+            for beam_path in bestk_paths:
+                if beam_path.is_done():
+                    new_paths.append(beam_path)
+                    continue
+                prev_hidden = beam_path.prev_hidden
+                prev_word = torch.LongTensor([beam_path.prev_word])
+                logits, hidden, _  = self.decoder\
+                (prev_word, prev_hidden, encoder_outputs_reshaped)
+                p = torch.nn.functional.softmax(logits.view(-1), dim=0)
+                kp, greedy_kwords = torch.topk(p, beam_width)
+                klogp = torch.log(kp).tolist()
+                greedy_kwords = greedy_kwords.tolist()
+                best_word = get_best_token(greedy_kwords, bad_tokens)
+                new_paths.extend(beam_path.get_new_paths(greedy_kwords, bad_tokens, best_word, klogp, hidden, None))
+            
+            bestk_paths = Beam_path.get_bestk_paths(new_paths, beam_width)
+        
+        best_path = bestk_paths[-1]
+        return best_path.path[:-1]
         
     def save(self):
         torch.save(self.state_dict(), 'model.t7')

@@ -6,31 +6,10 @@ import nltk
 
 lemmatizer = nltk.wordnet.WordNetLemmatizer()
 
-
 def process_intent(intent):
     intent, slot_map = tokenize_intent(intent)
     intent = [lemmatizer.lemmatize(e.lower()) for e in intent]
     return intent, slot_map
-
-def sub_slotmap(tokens, slot_map):
-    # replace slot maps
-    for i in range(len(tokens)):
-        if tokens[i] in slot_map:
-            value = slot_map[tokens[i]]
-            tokens[i] = value
-
-        elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
-            value = slot_map[tokens[i][1:-1]]
-            quote = tokens[i][0]
-            tokens[i] = quote + value + quote
-
-        elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
-            value = slot_map[tokens[i][3:-3]]
-            quote = tokens[i][0:3]
-            tokens[i] = quote + value + quote
-            
-    return ' '.join(tokens)
-
 
 def tokenize_conala_entry(entry):
     intent, slot_map = process_intent(entry['intent'])

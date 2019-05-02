@@ -1,6 +1,77 @@
 import ast
 import copy
 import torch
+from evaluate import get_bleu_sent, tokenize_for_bleu_eval
+from nltk.tokenize import word_tokenize
+from string import punctuation
+
+def strip_punctuation(s):
+    return ''.join(c for c in s if c not in punctuation)
+
+def sub_slotmap(tokens, slot_map):
+    # replace slot maps
+    for i in range(len(tokens)):
+        if tokens[i] in slot_map:
+            value = slot_map[tokens[i]]
+            tokens[i] = value
+
+        elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
+            value = slot_map[tokens[i][1:-1]]
+            quote = tokens[i][0]
+            tokens[i] = quote + value + quote
+
+        elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
+            value = slot_map[tokens[i][3:-3]]
+            quote = tokens[i][0:3]
+            tokens[i] = quote + value + quote
+            
+    return tokens
+
+def post_process_test(intent, slot_map, beams, idx2code, code):
+    print(intent)
+    print(code)
+    print(slot_map)
+    print('before process:')
+    for beam in beams:
+        beam.score /= len(beam.path)
+        beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
+        score = get_bleu_sent(' '.join(beam.path), code)
+        print('b_score:' + '%.2f'%beam.score + '\tscore:' + '%.2f'%score + ':\t' + ' '.join(beam.path))
+        
+    intent_tokens = tokenize_for_bleu_eval(intent.lower())
+    print(intent_tokens)
+    for beam in beams:
+        gen_code = ' '.join(beam.path)
+        for token in intent_tokens:
+            if token in gen_code:
+                beam.score += 1.0 / len(intent_tokens)
+    
+    print('after process:')
+    beams = sorted(beams, key=lambda x: x.score)
+    for beam in beams:
+        score = get_bleu_sent(' '.join(beam.path), code)
+        print('b_score:' + '%.2f'%beam.score + '\tscore:' + '%.2f'%score + ':\t' + ' '.join(beam.path))
+        
+def post_process(intent, slot_map, beams, idx2code):
+    for beam in beams:
+        beam.score /= len(beam.path)
+        beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
+    
+    intent_tokens = tokenize_for_bleu_eval(intent.lower())
+    for beam in beams:
+        gen_code = ' '.join(beam.path)
+        for token in intent_tokens:
+            if token in gen_code:
+                beam.score += 1.0 / len(intent_tokens)
+    
+    beams = sorted(beams, key=lambda x: x.score)
+    return ' '.join(beams[-1].path)
+    
+def post_process_dummy(intent, slot_map, beams, idx2code):
+    for beam in beams:
+        beam.score /= len(beam.path)
+        beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
+    return ' '.join(beams[-1].path)
 
 class Decoder():
     def __init__(self, seq2seq_model, lang_model=None, hyperP=None):
@@ -86,13 +157,13 @@ class Decoder():
             
             bestk_paths = Beam_path.get_bestk_paths(new_paths, beam_width)
         
-        best_path = bestk_paths[-1]
-        return best_path.path[:-1]
+        return bestk_paths
     
+
 
 class Beam_path(object):
     def __init__(self, eos=None, logp=0, cur_word=None, prev_hidden=None, prev_context=None, replace_word=None):
-        self.logp = logp
+        self.score = logp
         self.path = [cur_word] if replace_word == None else [replace_word]
         self.prev_word = cur_word
         self.prev_hidden = prev_hidden 
@@ -101,13 +172,13 @@ class Beam_path(object):
     
     def _copy(self):
         path = Beam_path()
-        path.logp = self.logp 
+        path.score = self.score 
         path.path = copy.copy(self.path)
         path.eos = self.eos
         return path
         
     def _update(self, cur_word, logp, hidden, context, replace_word=None):
-        self.logp += logp
+        self.score += logp
         self.path.append(cur_word if replace_word == None else replace_word)
         self.prev_word = cur_word 
         self.prev_hidden = hidden
@@ -129,9 +200,9 @@ class Beam_path(object):
         return new_paths
         
     def __repr__(self):
-        return str(self.path) + str(self.logp)
+        return str(self.path) + str(self.score)
         
     @staticmethod
     def get_bestk_paths(paths, k):
-        sorted_paths = sorted(paths, key=lambda x: x.logp / len(x.path))
+        sorted_paths = sorted(paths, key=lambda x: x.score / len(x.path))
         return sorted_paths[-k:]
