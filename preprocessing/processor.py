@@ -30,38 +30,6 @@ def sub_slotmap(tokens, slot_map):
             tokens[i] = quote + value + quote
             
     return ' '.join(tokens)
-    # remove spaces between digits:
-    #     new_tokens = []
-    #     num_list = []
-    #     for token in tokens:
-    #         if token.isdigit():
-    #             num_list.append(token)
-    #         else:
-    #             if len(num_list) != 0:
-    #                 num = ''.join(num_list)
-    #                 num_list = []
-    #                 new_tokens.append(num)
-    #             new_tokens.append(token)
-    #     if len(num_list) != 0:
-    #         num = ''.join(num_list)
-    #         new_tokens.append(num)
-
-    #     return ' '.join(new_tokens)
-            
-#     res = ''
-#     prev = ''
-#     non_space_set = {'.', '(', ')'}
-#     for token in new_tokens:
-#         if prev is ')' and token not in non_space_set:
-#             res += ' ' + token
-#         elif token in non_space_set or prev in non_space_set:
-#             res += token
-#         elif token is '.' or prev is '.':
-#             res += token
-#         else:
-#             res += ' ' + token
-#         prev = token
-#     return res[1:]
 
 
 def tokenize_conala_entry(entry):

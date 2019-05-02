@@ -71,10 +71,12 @@ class Decoder():
                     (prev_word, prev_hidden, encoder_outputs_reshaped, prev_context)
                 p1 = torch.nn.functional.softmax(logits.view(-1), dim=0)
                 logp = self.weight1 * torch.log(p1)
+                
                 if lang_model is not None:
                     # p2 = ....
                     # logp += self.weight2 * torch.log(p2)
                     pass 
+                    
                 klogp, greedy_kwords = torch.topk(logp, beam_width)
                 klogp = klogp.tolist()
                 greedy_kwords = greedy_kwords.tolist()
