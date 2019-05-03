@@ -67,9 +67,8 @@ def post_process(intent, slot_map, beams, idx2code):
     beams = sorted(beams, key=lambda x: x.score)
     return ' '.join(beams[-1].path)
     
-def post_process_dummy(intent, slot_map, beams, idx2code):
+def post_process_dummy(slot_map, beams, idx2code):
     for beam in beams:
-        beam.score /= len(beam.path)
         beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
     return ' '.join(beams[-1].path)
 
@@ -87,6 +86,7 @@ class Decoder():
     def decode(self, src_seq, sos, eos, unk, beam_width=10, max_len=36):
         assert(beam_width > 2)
         model = self.model1 
+        model.eval()
         lang_model = self.model2
         
         encoder_outputs, _, _ = model.encoder(src_seq)
