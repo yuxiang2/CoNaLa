@@ -29,7 +29,7 @@ class ScoreDataset(Dataset):
         code_list = to_tensor(self.code_lists[idx])
         slot_num = self.slot_nums[idx]
         score = self.scores[idx]
-#         print(intent_list)
+        #         print(intent_list)
         return (intent_list, code_list, slot_num, score)
 
 
@@ -38,11 +38,11 @@ def collate_lines(seq_list):
     lens = [len(seq) for seq in intents]
     intents_seq_order = sorted(range(len(lens)), key=lens.__getitem__, reverse=True)
     intents = [torch.LongTensor(intents[i]) for i in intents_seq_order]
-    
+
     lens = [len(seq) for seq in codes]
     codes_seq_order = sorted(range(len(lens)), key=lens.__getitem__, reverse=True)
     codes = [torch.LongTensor(codes[i]) for i in codes_seq_order]
-    
+
     slot_nums = 0.02 * torch.Tensor(slot_nums).unsqueeze(1)
     scores = torch.Tensor(scores).unsqueeze(1)
 
@@ -78,10 +78,10 @@ class Encoder(nn.Module):
         except:
             print(src)
         packed = U.rnn.pack_sequence(embeddings)
-        outputs, hidden = self.gru(packed, hidden) 
-        new_order = [i for i,j in enumerate(order)]
-        
-        hidden = hidden.permute(1,0,2).contiguous().view(hidden.size(1), -1) 
+        outputs, hidden = self.gru(packed, hidden)
+        new_order = [i for i, j in enumerate(order)]
+
+        hidden = hidden.permute(1, 0, 2).contiguous().view(hidden.size(1), -1)
         return hidden[new_order]
 
 
@@ -95,7 +95,7 @@ class ScoreNet(nn.Module):
             nn.Linear(4 * 2 * hyperP['encoder_hidden_size'] + 1, 50),
             nn.BatchNorm1d(50),
             nn.ReLU(),
-            nn.Linear(50,1),
+            nn.Linear(50, 1),
             nn.Sigmoid(),
         )
 
@@ -115,9 +115,10 @@ class ScoreNet(nn.Module):
     def load(self):
         self.load_state_dict(torch.load('nerual_bleu.t7'))
 
+
 hyperP = {
     ## training parameters
-    'batch_size': 8,
+    'batch_size': 32,
     'lr': 1e-3,
     'teacher_force_rate': 0.90,
     'max_epochs': 50,
@@ -156,7 +157,7 @@ def train(model, trainloader, optimizer, loss_f, hyperP):
         if (i + 1) % print_every == 0:
             print('Train loss:{}\t'.format(loss_sum / print_every))
             loss_sum = 0
-            
+
     return total_loss / len(trainloader)
 
 
@@ -168,23 +169,15 @@ if __name__ == '__main__':
     code_lists = [x[1] for x in array]
     slot_nums = [x[2] for x in array]
     scores = [x[3] for x in array]
-    
-    intent_flat_list = []
-    for intent_list in intent_lists:
-        intent_flat_list.extend(intent_list)
 
-    code_flat_list = []
-    for code_list in code_lists:
-        code_flat_list.extend(code_list)
-    
-    word_size = max(intent_flat_list) + 1
-    code_size = max(code_flat_list) + 1
+    word_size = max([max(intent_list) for intent_list in intent_lists]) + 1
+    code_size = max([max(code_list) for code_list in code_lists]) + 1
 
     # trainset = ScoreDataset(intent_lists, code_lists, slot_nums, scores)
     trainloader = get_train_loader(intent_lists, code_lists, slot_nums, scores, hyperP)
 
     model = ScoreNet(word_size, code_size, hyperP)
-    
+
     optimizer = optim.Adam(model.parameters(), lr=hyperP['lr'], weight_decay=1e-4)
     lr_keep_rate = hyperP['lr_keep_rate']
     if lr_keep_rate != 1.0:
