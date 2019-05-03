@@ -109,6 +109,12 @@ class ScoreNet(nn.Module):
         inp = torch.cat((intent_hidden, code_hidden, slot_nums_seq), dim=1)
         return self.fc(inp)
 
+    def save(self):
+        torch.save(self.state_dict(), 'nerual_bleu.t7')
+
+    def load(self):
+        self.load_state_dict(torch.load('nerual_bleu.t7'))
+
 hyperP = {
     ## training parameters
     'batch_size': 8,
