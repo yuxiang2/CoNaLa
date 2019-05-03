@@ -73,7 +73,10 @@ class Encoder(nn.Module):
                           dropout=dropout, bidirectional=True)
 
     def forward(self, src, order, hidden=None):
-        embeddings = [self.embed(datapoint) for datapoint in src]
+        try:
+            embeddings = [self.embed(datapoint) for datapoint in src]
+        except:
+            print(src)
         packed = U.rnn.pack_sequence(embeddings)
         outputs, hidden = self.gru(packed, hidden) 
         new_order = [i for i,j in enumerate(order)]
@@ -108,7 +111,7 @@ class ScoreNet(nn.Module):
 
 hyperP = {
     ## training parameters
-    'batch_size': 32,
+    'batch_size': 8,
     'lr': 1e-3,
     'teacher_force_rate': 0.90,
     'max_epochs': 50,
@@ -145,7 +148,7 @@ def train(model, trainloader, optimizer, loss_f, hyperP):
         total_loss += loss.item()
 
         if (i + 1) % print_every == 0:
-            print('Train: loss:{}\t'.format(loss_sum / print_every), end='\r')
+            print('Train loss:{}\t'.format(loss_sum / print_every))
             loss_sum = 0
             
     return total_loss / len(trainloader)
@@ -159,8 +162,17 @@ if __name__ == '__main__':
     code_lists = [x[1] for x in array]
     slot_nums = [x[2] for x in array]
     scores = [x[3] for x in array]
-    word_size = max(max(intent_lists)) + 1
-    code_size = max(max(code_lists)) + 1
+    
+    intent_flat_list = []
+    for intent_list in intent_lists:
+        intent_flat_list.extend(intent_list)
+
+    code_flat_list = []
+    for code_list in code_lists:
+        code_flat_list.extend(code_list)
+    
+    word_size = max(intent_flat_list) + 1
+    code_size = max(code_flat_list) + 1
 
     # trainset = ScoreDataset(intent_lists, code_lists, slot_nums, scores)
     trainloader = get_train_loader(intent_lists, code_lists, slot_nums, scores, hyperP)
