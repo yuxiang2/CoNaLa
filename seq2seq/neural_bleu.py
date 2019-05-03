@@ -29,43 +29,30 @@ class ScoreDataset(Dataset):
         code_list = to_tensor(self.code_lists[idx])
         slot_num = self.slot_nums[idx]
         score = self.scores[idx]
-        print(intent_list)
+#         print(intent_list)
         return (intent_list, code_list, slot_num, score)
 
 
-def collate_lines(seq_list, special_symbols):
-    inputs, targets = zip(*seq_list)
-    lens = [len(seq) for seq in inputs]
-    seq_order = sorted(range(len(lens)), key=lens.__getitem__, reverse=True)
-    inputs = [torch.LongTensor(inputs[i]) for i in seq_order]
-    targets = [targets[i] for i in seq_order]
+def collate_lines(seq_list):
+    intents, codes, slot_nums, scores = zip(*seq_list)
+    lens = [len(seq) for seq in intents]
+    intents_seq_order = sorted(range(len(lens)), key=lens.__getitem__, reverse=True)
+    intents = [torch.LongTensor(intents[i]) for i in intents_seq_order]
+    
+    lens = [len(seq) for seq in codes]
+    codes_seq_order = sorted(range(len(lens)), key=lens.__getitem__, reverse=True)
+    codes = [torch.LongTensor(codes[i]) for i in codes_seq_order]
+    
+    slot_nums = 0.02 * torch.Tensor(slot_nums).unsqueeze(1)
+    scores = torch.Tensor(scores).unsqueeze(1)
 
-    # get valid target lengths
-    valid_target_lengths = [len(target) - 1 for target in targets]
-    # -1 because padding
-
-    # pad target to the same length
-    max_len_target = max(len(target) for target in targets)
-    code_pad = special_symbols['code_eos']
-    padded_targets = []
-    for i in range(len(targets)):
-        padded_target = targets[i] + [code_pad] * (max_len_target - len(targets[i]))
-        padded_targets.append(padded_target)
-    padded_targets = torch.LongTensor(padded_targets)
-
-    original_targets = []
-    for target in targets:
-        original_targets += target[1:]
-    original_targets = torch.LongTensor(original_targets)
-
-    return inputs, original_targets, padded_targets, valid_target_lengths
+    return intents, codes, slot_nums, scores, intents_seq_order, codes_seq_order
 
 
-def get_train_loader(train_entries, special_symbols, hyperP):
+def get_train_loader(intent_lists, code_lists, slot_nums, scores, hyperP):
     trainset = ScoreDataset(intent_lists, code_lists, slot_nums, scores)
     # batch_size = hyperP['batch_size']
-    return DataLoader(trainset, batch_size=hyperP['batch_size'],
-                      collate_fn=lambda b: collate_lines(b, special_symbols))
+    return DataLoader(trainset, batch_size=hyperP['batch_size'], shuffle=True, collate_fn=collate_lines)
 
 
 class Encoder(nn.Module):
@@ -85,16 +72,14 @@ class Encoder(nn.Module):
         self.gru = nn.GRU(embed_size, hidden_size, n_layers,
                           dropout=dropout, bidirectional=True)
 
-    def forward(self, src, hidden=None):
+    def forward(self, src, order, hidden=None):
         embeddings = [self.embed(datapoint) for datapoint in src]
         packed = U.rnn.pack_sequence(embeddings)
-        outputs, hidden = self.gru(packed, hidden)
-        outputs, output_lengths = U.rnn.pad_packed_sequence(outputs)
-
-        # sum bidirectional outputs
-        outputs = (outputs[:, :, :self.hidden_size] +
-                   outputs[:, :, self.hidden_size:])
-        return outputs, output_lengths, hidden
+        outputs, hidden = self.gru(packed, hidden) 
+        new_order = [i for i,j in enumerate(order)]
+        
+        hidden = hidden.permute(1,0,2).contiguous().view(hidden.size(1), -1) 
+        return hidden[new_order]
 
 
 class ScoreNet(nn.Module):
@@ -103,21 +88,23 @@ class ScoreNet(nn.Module):
         self.intent_encoder = Encoder(word_size, hyperP)
         self.code_encoder = Encoder(code_size, hyperP)
 
-        # self.fc = nn.Linear(, 1)
+        self.fc = nn.Sequential(
+            nn.Linear(4 * 2 * hyperP['encoder_hidden_size'] + 1, 50),
+            nn.BatchNorm1d(50),
+            nn.ReLU(),
+            nn.Linear(50,1),
+            nn.Sigmoid(),
+        )
 
         self.encoder_hidden_size = hyperP['encoder_hidden_size']
         self.code_size = code_size
 
-    def forward(self, intent_src_seq, code_src_seq, slot_nums_seq, trgt_seq):
+    def forward(self, intent_src_seq, code_src_seq, slot_nums_seq, intent_order, code_order):
         batch_size = len(intent_src_seq)
-        intent_encoder_outputs, intent_encoder_valid_lengths, _ = self.intent_encoder(intent_src_seq)
-        encoder_outputs_reshaped = intent_encoder_outputs.permute(1, 2, 0).contiguous()
-
-        code_encoder_outputs, code_encoder_valid_lengths, _ = self.code_encoder(intent_src_seq)
-        encoder_outputs_reshaped = code_encoder_outputs.permute(1, 2, 0).contiguous()
-
-        # return score
-
+        intent_hidden = self.intent_encoder(intent_src_seq, intent_order)
+        code_hidden = self.code_encoder(code_src_seq, code_order)
+        inp = torch.cat((intent_hidden, code_hidden, slot_nums_seq), dim=1)
+        return self.fc(inp)
 
 hyperP = {
     ## training parameters
@@ -132,7 +119,7 @@ hyperP = {
     ## encoder architecture
     'encoder_layers': 2,
     'encoder_embed_size': 128,
-    'encoder_hidden_size': 384,
+    'encoder_hidden_size': 256,
     'encoder_dropout_rate': 0.3,
 
     ## visualization
@@ -144,13 +131,11 @@ def train(model, trainloader, optimizer, loss_f, hyperP):
     model.train()
     total_loss = 0
     loss_sum = 0
-    total_correct = 0
-    size = 0
     print_every = hyperP['print_every']
 
-    for i, (inp_seq, original_out_seq, padded_out_seq, out_lens) in enumerate(trainloader):
-        logits = model(inp_seq, padded_out_seq, out_lens)
-        loss = loss_f(logits, original_out_seq)
+    for i, (intents, codes, slot_nums, scores, intents_seq_order, codes_seq_order) in enumerate(trainloader):
+        predict_scores = model(intents, codes, slot_nums, intents_seq_order, codes_seq_order)
+        loss = loss_f(predict_scores, scores)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -158,15 +143,12 @@ def train(model, trainloader, optimizer, loss_f, hyperP):
         # show stats
         loss_sum += loss.item()
         total_loss += loss.item()
-        _, predictions = torch.max(logits, dim=1)
-        total_correct += (predictions == original_out_seq).sum()
-        size += len(original_out_seq)
 
         if (i + 1) % print_every == 0:
-            print('Train: loss:{}\tacc:{}'.format(loss_sum / print_every, float(total_correct) / size), end='\r')
+            print('Train: loss:{}\t'.format(loss_sum / print_every), end='\r')
             loss_sum = 0
-            total_correct = 0
-            size = 0
+            
+    return total_loss / len(trainloader)
 
 
 if __name__ == '__main__':
@@ -177,29 +159,27 @@ if __name__ == '__main__':
     code_lists = [x[1] for x in array]
     slot_nums = [x[2] for x in array]
     scores = [x[3] for x in array]
-    word_size = max(max(intent_lists))
-    code_size = max(max(code_lists))
+    word_size = max(max(intent_lists)) + 1
+    code_size = max(max(code_lists)) + 1
 
     # trainset = ScoreDataset(intent_lists, code_lists, slot_nums, scores)
-    trainloader = get_train_loader()
+    trainloader = get_train_loader(intent_lists, code_lists, slot_nums, scores, hyperP)
 
     model = ScoreNet(word_size, code_size, hyperP)
+    
     optimizer = optim.Adam(model.parameters(), lr=hyperP['lr'], weight_decay=1e-4)
     lr_keep_rate = hyperP['lr_keep_rate']
     if lr_keep_rate != 1.0:
         lr_reduce_f = lambda epoch: lr_keep_rate ** epoch
         scheduler = LambdaLR(optimizer, lr_lambda=lr_reduce_f)
 
-    loss_f = torch.nn.CrossEntropyLoss()
+    loss_f = torch.nn.MSELoss()
 
-    for idx, (intent_lists, code_lists, slot_nums, scores) in enumerate(trainloader):
-        print(intent_lists.size(), scores.size())
-
-    # losses = []
-    # for e in range(hyperP['max_epochs']):
-    #     loss = train(model, trainloader, optimizer, loss_f, hyperP)
-    #     losses.append(loss)
-    #     model.save()
-    #     print('model saved')
-    #     if lr_keep_rate != 1.0:
-    #         scheduler.step()
+    losses = []
+    for e in range(hyperP['max_epochs']):
+        loss = train(model, trainloader, optimizer, loss_f, hyperP)
+        losses.append(loss)
+        model.save()
+        print('model saved')
+        if lr_keep_rate != 1.0:
+            scheduler.step()
