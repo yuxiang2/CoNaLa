@@ -77,7 +77,7 @@ class Encoder(nn.Module):
             embeddings = [self.embed(datapoint) for datapoint in src]
         except:
             print(src)
-        packed = U.rnn.pack_sequence(embeddings)
+        packed = U.rnn.pack_sequence(embeddings).cuda()
         outputs, hidden = self.gru(packed, hidden)
         new_order = [i for i, j in enumerate(order)]
 
@@ -106,7 +106,8 @@ class ScoreNet(nn.Module):
         batch_size = len(intent_src_seq)
         intent_hidden = self.intent_encoder(intent_src_seq, intent_order)
         code_hidden = self.code_encoder(code_src_seq, code_order)
-        inp = torch.cat((intent_hidden, code_hidden, slot_nums_seq), dim=1)
+
+        inp = torch.cat((intent_hidden, code_hidden, slot_nums_seq.cuda()), dim=1)
         return self.fc(inp)
 
     def save(self):
@@ -177,7 +178,7 @@ if __name__ == '__main__':
     # trainset = ScoreDataset(intent_lists, code_lists, slot_nums, scores)
     trainloader = get_train_loader(intent_lists, code_lists, slot_nums, scores, hyperP)
 
-    model = ScoreNet(word_size, code_size, hyperP)
+    model = ScoreNet(word_size, code_size, hyperP).cuda()
 
     optimizer = optim.Adam(model.parameters(), lr=hyperP['lr'], weight_decay=1e-4)
     lr_keep_rate = hyperP['lr_keep_rate']
