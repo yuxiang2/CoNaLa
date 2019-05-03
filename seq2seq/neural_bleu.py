@@ -92,10 +92,10 @@ class ScoreNet(nn.Module):
         self.code_encoder = Encoder(code_size, hyperP)
 
         self.fc = nn.Sequential(
-            nn.Linear(4 * 2 * hyperP['encoder_hidden_size'] + 1, 50),
-            nn.BatchNorm1d(50),
+            nn.Linear(4 * 2 * hyperP['encoder_hidden_size'] + 1, 200),
+            nn.BatchNorm1d(200),
             nn.ReLU(),
-            nn.Linear(50, 1),
+            nn.Linear(200, 1),
             nn.Sigmoid(),
         )
 
@@ -137,10 +137,11 @@ hyperP = {
 }
 
 
-def train(model, trainloader, optimizer, loss_f, hyperP):
+def train(model, trainloader, optimizer, loss_f, hyperP, e, total_len):
     model.train()
     total_loss = 0
     loss_sum = 0
+    cnt = 0
     print_every = hyperP['print_every']
 
     for i, (intents, codes, slot_nums, scores, intents_seq_order, codes_seq_order) in enumerate(trainloader):
@@ -153,9 +154,9 @@ def train(model, trainloader, optimizer, loss_f, hyperP):
         # show stats
         loss_sum += loss.item()
         total_loss += loss.item()
-
+        cnt += hyperP['batch_size']
         if (i + 1) % print_every == 0:
-            print('Train loss:{}\t'.format(loss_sum / print_every))
+            print('Epoch {}, prograss {}%, Train loss:{}\t'.format(e, 100 * cnt / total_len, loss_sum / print_every))
             loss_sum = 0
 
     return total_loss / len(trainloader)
@@ -188,7 +189,7 @@ if __name__ == '__main__':
 
     losses = []
     for e in range(hyperP['max_epochs']):
-        loss = train(model, trainloader, optimizer, loss_f, hyperP)
+        loss = train(model, trainloader, optimizer, loss_f, hyperP, e, len(scores))
         losses.append(loss)
         model.save()
         print('model saved')
