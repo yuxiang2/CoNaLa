@@ -52,7 +52,7 @@ def post_process_test(intent, slot_map, beams, idx2code, code):
         score = get_bleu_sent(' '.join(beam.path), code)
         print('b_score:' + '%.2f'%beam.score + '\tscore:' + '%.2f'%score + ':\t' + ' '.join(beam.path))
         
-def post_process(intent, slot_map, beams, idx2code):
+def post_process_hand(intent, slot_map, beams, idx2code):
     for beam in beams:
         beam.score /= len(beam.path)
         beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
@@ -71,6 +71,41 @@ def post_process_dummy(slot_map, beams, idx2code):
     for beam in beams:
         beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
     return ' '.join(beams[-1].path)
+
+def post_process_model(intent, beams, idx2code, model, process_intent, intent2idx):
+    intent_tokens, slot_map = process_intent(intent)
+    intent_idx = intent2idx(intent_tokens)
+    
+    gen_code_idx = [beam.path[:-1] for beam in beams]
+    gen_code = [' '.join(sub_slotmap(idx2code(idx), slot_map)) for idx in gen_code_idx]
+    
+    slot_values = slot_map.values()
+    slot_token_counts = {}
+    for value in slot_values:
+        slot_token_counts[value] = len(tokenize_for_bleu_eval(value))
+    
+    slotmap_used_counts = []
+    for code in gen_code:
+        slotmap_used_count = 0
+        for value in slot_values:
+            if value in code:
+                slotmap_used_count += slot_token_counts[value]
+        slotmap_used_counts.append(slotmap_used_count)
+        
+    model_inputs = []
+    for code_idx,count_token in zip(gen_code_idx, slotmap_used_counts):
+        model_inputs.append((intent_idx, code_idx, count_token))
+    
+    print(model_inputs)
+#     scores = [model(inp) for inp in model_inputs]
+#     best_score = 0.0
+#     best_idx = 0
+#     for i,score in enumerate(scores):
+#         if score > best_score:
+#             best_score = score
+#             best_idx = i
+#     return gen_code[best_idx]
+    
 
 class Decoder():
     def __init__(self, seq2seq_model, lang_model=None, hyperP=None):
