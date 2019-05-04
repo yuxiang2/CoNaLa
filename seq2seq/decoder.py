@@ -282,7 +282,8 @@ class Decoder():
         
         # initial step for language model
         if lang_model is not None:
-            # p2 = ....
+            # logits = ....prev_token
+            # p2 = torch.nn.functional.softmax(logits.view(-1), dim=0)
             # logp += self.weight2 * torch.log(p2)
             pass 
             
