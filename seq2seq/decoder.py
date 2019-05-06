@@ -282,10 +282,11 @@ class Decoder():
         
         # initial step for language model
         if lang_model is not None:
-            # logits = ....prev_token
-            # p2 = torch.nn.functional.softmax(logits.view(-1), dim=0)
-            # logp += self.weight2 * torch.log(p2)
-            pass 
+            logits, language_model_hidden = lang_model.calculateProb(prev_token, None)
+            p2 = torch.nn.functional.softmax(logits.view(-1), dim=0)
+            logp += self.weight2 * torch.log(p2)
+        else:
+            language_model_hidden = None
             
         klogp, greedy_kwords = torch.topk(logp, beam_width)
         klogp = klogp.tolist() 
@@ -295,9 +296,10 @@ class Decoder():
         bestk_paths = []
         for logp,init_word in zip(klogp,greedy_kwords):
             if init_word in bad_tokens:
-                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context, best_token))
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context, best_token, language_model_hidden))
             else:
-                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context))
+                bestk_paths.append(Beam_path(eos, logp, init_word, hidden, context, 
+                                             prev_language_model_hidden=language_model_hidden))
         
         # initial step done, steps afterwards
         for i in range(1, max_len):
@@ -316,16 +318,19 @@ class Decoder():
                 logp = self.weight1 * torch.log(p1)
                 
                 if lang_model is not None:
-                    # p2 = ....
-                    # logp += self.weight2 * torch.log(p2)
-                    pass 
+                    logits, language_model_hidden = lang_model.calculateProb(prev_word, 
+                                                                             beam_path.prev_language_model_hidden)
+                    p2 = torch.nn.functional.softmax(logits.view(-1), dim=0)
+                    logp += self.weight2 * torch.log(p2)
+                else:
+                    language_model_hidden = None
                     
                 klogp, greedy_kwords = torch.topk(logp, beam_width)
                 klogp = klogp.tolist()
                 greedy_kwords = greedy_kwords.tolist()
                 best_token = get_best_token(greedy_kwords, bad_tokens)
                 new_paths.extend(beam_path.get_new_paths(greedy_kwords, bad_tokens,\
-                    best_token, klogp, hidden, context))
+                    best_token, klogp, hidden, context, language_model_hidden))
             
             bestk_paths = Beam_path.get_bestk_paths(new_paths, beam_width)
         
@@ -334,11 +339,13 @@ class Decoder():
 
 
 class Beam_path(object):
-    def __init__(self, eos=None, logp=0, cur_word=None, prev_hidden=None, prev_context=None, replace_word=None):
+    def __init__(self, eos=None, logp=0, cur_word=None, prev_hidden=None, prev_context=None, replace_word=None, 
+                 prev_language_model_hidden=None):
         self.score = logp
         self.path = [cur_word] if replace_word == None else [replace_word]
         self.prev_word = cur_word
         self.prev_hidden = prev_hidden 
+        self.prev_language_model_hidden = prev_language_model_hidden
         self.prev_context = prev_context
         self.eos = eos
     
@@ -349,26 +356,27 @@ class Beam_path(object):
         path.eos = self.eos
         return path
         
-    def _update(self, cur_word, logp, hidden, context, replace_word=None):
+    def _update(self, cur_word, logp, hidden, context, language_model_hidden=None, replace_word=None):
         self.score += logp
         self.path.append(cur_word if replace_word == None else replace_word)
         self.prev_word = cur_word 
         self.prev_hidden = hidden
+        self.prev_language_model_hidden = language_model_hidden
         self.prev_context = context
         
     def is_done(self):
         return self.prev_word == self.eos
         
-    def get_new_paths(self, branches, bad_tokens, replace_word, logps, hidden, context):
+    def get_new_paths(self, branches, bad_tokens, replace_word, logps, hidden, context, language_model_hidden=None):
         N = len(branches)
         new_paths = []
         for i in range(N):
             new_paths.append(self._copy())
         for new_path,branch,logp in zip(new_paths,branches,logps):
             if branch in bad_tokens:
-                new_path._update(branch,logp,hidden,context,replace_word)
+                new_path._update(branch,logp,hidden,context,language_model_hidden,replace_word)
             else:
-                new_path._update(branch,logp,hidden,context)
+                new_path._update(branch,logp,hidden,context,language_model_hidden)
         return new_paths
         
     def __repr__(self):
