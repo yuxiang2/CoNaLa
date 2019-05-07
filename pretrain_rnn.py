@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from preprocessing.processor import Code
 
 
+doTrain = False
 code_path = './language_model_corpus/train_code_lm.txt'
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 code_lm_dir = './pretrain_code_lm'
@@ -138,19 +139,20 @@ class Decoder(nn.Module):
         loss = torch.mean(lossSum, dim=0)
         return loss, acc
 
-    def calculateProb(self, codeIndices):
+    def calculateProb(self, prevWord, prevHidden):
         # Inputs:
         # codeIndices: a 1-d long tensor
         # Output:
         # a 1-d tensor of length uniqueToken
-        batchedCode = codeIndices.unsqueeze(0)         # (1 x codeLen)
-        contextEmbedding = self.embedding(batchedCode) # (1 x codeLen x embeddingSize)
-        contextEmbedding = torch.transpose(contextEmbedding, 0, 1)  # (codeLen x 1 x embeddingSize)
-        _, (h_i, _) = self.rnn(contextEmbedding)       # (2 * numLayers, 1, hiddenSize)
-        logits = (h_i[-2] + h_i[-1]).contiguous()      # (1 x hiddenSize)
+        batchedCode = prevWord.unsqueeze(0)                         # (1 x 1)
+        contextEmbedding = self.embedding(batchedCode)              # (1 x 1 x embeddingSize)
+        contextEmbedding = torch.transpose(contextEmbedding, 0, 1)  # (1 x 1 x embeddingSize)
+        _, hidden = self.rnn(contextEmbedding, prevHidden)          # (2 * numLayers, 1, hiddenSize)
+        h = hidden[0]
+        logits = (h[-2] + h[-1]).contiguous()                       # (1 x hiddenSize)
         for l in self.tokenProjection:
-            logits = l(logits)                         # (1 x numUniqueTokens)
-        return logits.squeeze(0)                       # (numUniqueTokens, )
+            logits = l(logits)                                      # (1 x numUniqueTokens)
+        return logits.squeeze(0), hidden                            # (numUniqueTokens, )
 
     @staticmethod
     def getMask(maxLength, batchCodeLength):
@@ -216,23 +218,37 @@ def train(decoder, trainLoader, run_id='89757'):
 
 
 if __name__ == "__main__":
-    # Dataset
-    code = Code()
-    code.load_dict(path='./vocab/')
-    codes_indx = code.load_data(code_path)
-    code.pad(pad_length=1)
-    codes_indx = [line for line in codes_indx if len(line) >= 2]
-    uniqueTokens = len(code.num2code)
-    print("Number of lines of code to train: {}".format(len(codes_indx)))
-    print("Number of unique tokens: {}".format(uniqueTokens))
+    if doTrain:
+        # Dataset
+        code = Code()
+        code.load_dict(path='./vocab/')
+        codes_indx = code.load_data(code_path)
+        code.pad(pad_length=1)
+        codes_indx = [line for line in codes_indx if len(line) >= 2]
+        uniqueTokens = len(code.num2code)
+        print("Number of lines of code to train: {}".format(len(codes_indx)))
+        print("Number of unique tokens: {}".format(uniqueTokens))
 
-    # Translator and data loaders
-    trainLoader = CodeDataLoader(batchSize=batchSize, 
-                                 codes_indx=codes_indx,
-                                 vocab=code)
+        # Translator and data loaders
+        trainLoader = CodeDataLoader(batchSize=batchSize, 
+                                     codes_indx=codes_indx,
+                                     vocab=code)
 
-    # Create a decoder and train
-    decoder = Decoder(uniqueTokens=uniqueTokens,
-                      embeddingSize=decoderEmbeddingSize,
-                      hiddenSize=decoderHiddenSize).to(DEVICE)
-    train(decoder, trainLoader, run_id)
+        # Create a decoder and train
+        decoder = Decoder(uniqueTokens=uniqueTokens,
+                          embeddingSize=decoderEmbeddingSize,
+                          hiddenSize=decoderHiddenSize).to(DEVICE)
+        train(decoder, trainLoader, run_id)
+    else:
+        code = Code()
+        code.load_dict(path='./vocab/')
+        codes_indx = code.load_data(code_path)
+        code.pad(pad_length=1)
+        codes_indx = [line for line in codes_indx if len(line) >= 2]
+        uniqueTokens = len(code.num2code)
+        decoder = Decoder(uniqueTokens=uniqueTokens,
+                          embeddingSize=decoderEmbeddingSize,
+                          hiddenSize=decoderHiddenSize).to(DEVICE)
+        decoder.load_state_dict(torch.load("./pretrain_code_lm/code-lm.t7"))
+        print(decoder.calculateProb(torch.LongTensor([1,2,3,4]).to(DEVICE)).size())
+
