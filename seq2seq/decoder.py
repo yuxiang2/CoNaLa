@@ -6,61 +6,9 @@ from nltk.tokenize import word_tokenize
 from string import punctuation
 import nltk
 import ast
+import math
 
 lemmatizer = nltk.wordnet.WordNetLemmatizer()
-
-token_map = {
-    'numpy' : ['np'],
-    'np' : ['numpy'],
-    'panda' : ['pd'],
-    'pd' : ['panda'],
-    'concatenate' : ['join', 'add', 'cat'],
-    'average' : ['mean', 'sum', 'len'],
-    'integer' : ['int'],
-    'string' : ['str'],
-    'contain' : ['in'],
-    'append' : ['add', '\'a\''],
-    'delete' : ['del', 'remove', 'pop', '!=', '=='],
-    'remove' : ['del', 'delete', 'pop', '!=', '=='],
-    'digits' : ['0-9'],
-    'alphebet' : ['a-z', 'A-Z'],
-    'url' : ['https'],
-    'equal' : ['=', '==', '!='],
-    'greater' : ['>', '>='],
-    'smaller' : ['<', '<='],
-    'regex' : ['re'],
-    'sort' : ['lambda'],
-    'duplicated' : ['set'],
-    'read' : ['\'r\''],
-    'write' : ['\'w\''],
-    'add' : ['+', 'append'],
-    'subtract' : ['-'],
-    'minus' : ['-'],
-    'multiply' : ['*'],
-    'divide' : ['/'],
-    'reminder' : ['mod', '%'],
-    'file' : ['path', '.txt', '.csv'],
-    'last' : ['-1'],
-    'all' : ['for', 'in'],
-    'descending' : ['reverse', 'True', '-'],
-    'index' : ['i', 'idx', 'arg'],
-    'json' : ['dump', 'load'],
-    'column' : ['col', 'axis', 'dim'],
-    'square' : ['**', '2'],
-    'dictionary' : ['dict'],
-    'prompt' : ['input'],
-    'matplotlib' : ['plt', 'plot'],
-    'type' : ['isinstance'],
-    'between' : ['<', '<=', '>', '>=', 'range'],
-    'lowercase' : ['lower'],
-    'uppercase' : ['upper'],
-    'length' : ['len'],
-    'directory' : ['path'],
-    'execute' : ['subprocess', 'call', 'run'],
-    'dataframe' : ['df'],
-    'space' : [' ', 'strip'],
-    'bash' : ['subprocess']
-}
 
 def strip_punctuation(s):
     return ''.join(c for c in s if c not in punctuation)
@@ -68,19 +16,11 @@ def strip_punctuation(s):
 def sub_slotmap(tokens, slot_map):
     # replace slot maps
     for i in range(len(tokens)):
-        if tokens[i] in slot_map:
-            value = slot_map[tokens[i]]
-            tokens[i] = value
-
-        elif len(tokens[i]) > 2 and tokens[i][1:-1] in slot_map:
-            value = slot_map[tokens[i][1:-1]]
-            quote = tokens[i][0]
-            tokens[i] = quote + value + quote
-
-        elif len(tokens[i]) > 6 and tokens[i][3:-3] in slot_map:
-            value = slot_map[tokens[i][3:-3]]
-            quote = tokens[i][0:3]
-            tokens[i] = quote + value + quote
+        token = tokens[i]
+        for slot in slot_map.keys():
+            if slot in token:
+                tokens[i] = token.replace(slot, slot_map[slot])
+                continue
             
     return tokens
 
@@ -130,85 +70,60 @@ def post_process_test(intent, slot_map, beams, idx2code, code):
         score = get_bleu_sent(' '.join(beam.path), code)
         print('b_score:' + '%.2f'%beam.score + '\tscore:' + '%.2f'%score + ':\t' + ' '.join(beam.path))
 
-def manual_add_tokens(tokens):
-    add_tokens = []
-    for token in tokens:
-        if token in token_map:
-            add_tokens.extend(token_map[token])
-    tokens.extend(add_tokens)
-        
-
-def post_process_hand(intent, slot_map, beams, idx2code):
-    for beam in beams:
-        beam.score /= len(beam.path)
-        beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
+def post_process_pmi(intent, beams, idx2code, intent2idx, pmi, process_intent):
+    intent_tokens, slot_map = process_intent(intent)
+    intent_idx = intent2idx(intent_tokens)
+    intent_tokens = tokenize_for_bleu_eval(intent)
     
-    lemmatizer = nltk.wordnet.WordNetLemmatizer()
-    intent_tokens = tokenize_for_bleu_eval(intent.lower())
-    intent_tokens = [lemmatizer.lemmatize(token) for token in intent_tokens]
-    manual_add_tokens(intent_tokens)
-        
+    # get slot_map tokens counts
     slot_values = slot_map.values()
     slot_token_counts = {}
+    total_map_tokens = 0
     for value in slot_values:
-        slot_token_counts[value] = len(tokenize_for_bleu_eval(value))
+        tmp_tokens = len(tokenize_for_bleu_eval(value))
+        slot_token_counts[value] = tmp_tokens
+        total_map_tokens += tmp_tokens
     
-    for i,beam in enumerate(beams):
-        gen_code = ' '.join(beam.path)
-        code_token = tokenize_for_bleu_eval(gen_code)
+    for beam in beams:
+        code_len = len(beam.path)
+        beam.score /= code_len
+        
+        # get pmi_scores
+        pmi_score = 0.0
+        set_intent = set(intent_idx)
+        set_code = set(beam.path)
+        for word in set_intent:
+            for token in set_code:
+                pmi_score += pmi[word][token]
+        beam.score += 0.3 * pmi_score / len(set_intent)
+        
+        # convert index to code
+        beam.path = ' '.join(sub_slotmap(idx2code(beam.path)[:-1], slot_map))
         
         # check how many tokens are in common
+        code_tokens = tokenize_for_bleu_eval(beam.path)
         for token in intent_tokens:
-            if token in gen_code.lower():
-                beam.score += 2.0 / len(intent_tokens)
-            if token in code_token:
+            if token in code_tokens:
                 beam.score += 1.0 / len(intent_tokens)
-                
+        
         # check how many slot_map tokens are used
-        slotmap_used_count = 0
-        for value in slot_values:
-            if value in gen_code:
-                slotmap_used_count += slot_token_counts[value]
-        beam.score += float(slotmap_used_count) / len(intent_tokens)
-    
-    beams = sorted(beams, key=lambda x: x.score)
-    return ' '.join(beams[-1].path)
-
-# def post_process_hand(intent, slot_map, beams, idx2code):
-#     for beam in beams:
-#         beam.score /= len(beam.path)
-#         beam.path = sub_slotmap(idx2code(beam.path)[:-1], slot_map)
-    
-#     lemmatizer = nltk.wordnet.WordNetLemmatizer()
-#     intent_tokens = tokenize_for_bleu_eval(intent.lower())
-#     intent_tokens = [lemmatizer.lemmatize(token) for token in intent_tokens]
-#     manual_add_tokens(intent_tokens)
-        
-#     slot_values = slot_map.values()
-#     slot_token_counts = {}
-#     for value in slot_values:
-#         slot_token_counts[value] = len(tokenize_for_bleu_eval(value))
-    
-#     for i,beam in enumerate(beams):
-#         gen_code = ' '.join(beam.path)
-# #         code_token = tokenize_for_bleu_eval(gen_code)
-        
-#         # check how many tokens are in common
-#         for token in intent_tokens:
-#             if token in gen_code.lower():
-#                 beam.score += 2.0 / len(intent_tokens)
-# #             if token in code_token:
-# #                 beam.score += 1.0 / len(intent_tokens)
-                
-#         # check how many slot_map tokens are used
-#         slotmap_used_count = 0
-#         for value in slot_values:
-#             if value in gen_code:
-#                 slotmap_used_count += slot_token_counts[value]
-#         beam.score += float(slotmap_used_count) / len(intent_tokens)
-    
-#     beams = sorted(beams, key=lambda x: x.score)
-#     return ' '.join(beams[-1].path)
+        if total_map_tokens != 0:
+            slotmap_used_count = 0
+            for value in slot_values:
+                if value in beam.path:
+                    slotmap_used_count += slot_token_counts[value]
+            beam.score += 1.0 * float(slotmap_used_count) / total_map_tokens
+       
+            
+    # get the best beam
+    highest_score = -99.99
+    best_idx = 0
+    for i,beam in enumerate(beams):
+        score = beam.score
+        if score > highest_score:
+            highest_score = score
+            best_idx = i
+    return beams[best_idx].path
     
 def post_process_dummy(slot_map, beams, idx2code):
     for beam in beams:

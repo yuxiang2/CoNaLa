@@ -131,7 +131,7 @@ class Seq2Seq(nn.Module):
         encoder_max_len = encoder_outputs.size(0)
         encoder_mask = torch.zeros(batch_size, encoder_max_len)
         for i,length in enumerate(encoder_valid_lengths):
-            encoder_mask[i, length:] = -999.99
+            encoder_mask[i, length:] = -9999.99
             
         logits_seqs = []
         for t in range(1, len(trgt_seq[0])):
@@ -181,8 +181,13 @@ class Seq2Seq(nn.Module):
                 seq.append(prev_token.item())
         return seq
         
-    def save(self):
-        torch.save(self.state_dict(), 'model.t7')
-        
-    def load(self):
-        self.load_state_dict(torch.load('model.t7'))
+    def save(self, name=None):
+        if name == None:
+            torch.save(self.state_dict(), 'model.t7')
+        else:
+            torch.save(self.state_dict(), name)
+    def load(self, name=None):
+        if name == None:
+            self.load_state_dict(torch.load('model.t7'))
+        else:
+            self.load_state_dict(torch.load(name))

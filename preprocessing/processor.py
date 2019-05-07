@@ -16,13 +16,11 @@ def tokenize_conala_entry(entry):
     code = tokenize_code(entry['code'], slot_map)
     return intent, code, slot_map
 
-
 def get_raw_entries(path=None):
     if path == None:
         path = '../corpus/train.json'
     with open(path) as f:
         return json.load(f)
-
 
 ### Handle all pre/post-processing of Code-Intent Pair
 class Code_Intent_Pairs():
